@@ -1,5 +1,6 @@
 import { openDatabase, readAll, saveDog, saveReading, deleteReading, restoreBackup,
-  readBackupFile, makeBackup, toCsv, respiratoryRate, manualDate } from './data.mjs';
+  readBackupFile, makeBackup, toCsv, respiratoryRate, manualDate, manualDialogAction,
+  CONTEXTS, CONTEXT_LABELS, withReadingDefaults } from './data.mjs';
 import { createUpdateMonitor } from './updates.mjs';
 
 const $ = selector => document.querySelector(selector);
@@ -15,6 +16,7 @@ let session = null;
 let pending = null;
 let manualDraft = null;
 let manualDirty = false;
+let manualConfirming = false;
 let timer = null;
 let saving = false;
 let editId = null;
@@ -38,9 +40,18 @@ function toast(message) {
   toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 4500);
 }
 
+// Context options come from data.mjs, the single definition. Unrecorded context is listed last in the filter.
+for (const id of ['#reading-context', '#manual-context']) {
+  for (const value of CONTEXTS) $(id).add(new Option(CONTEXT_LABELS[value].label, value));
+}
+for (const value of [...CONTEXTS.filter(item => item !== 'not-recorded'), 'not-recorded']) {
+  $('#history-context').add(new Option(CONTEXT_LABELS[value].filter, value));
+}
+
 function dog() { return snapshot.dogs.find(item => item.id === selectedId); }
-function readingDetails(entry) {
-  const context = { asleep: 'Asleep', resting: 'Resting', restless: 'Restless' }[entry.context] ?? 'Context not recorded';
+function readingDetails(reading) {
+  const entry = withReadingDefaults(reading);
+  const context = CONTEXT_LABELS[entry.context]?.short ?? CONTEXT_LABELS['not-recorded'].short;
   const source = entry.source === 'manual' ? 'Manual entry' : `${entry.count} breaths counted over ${entry.seconds} seconds`;
   return `${source} · ${context}${entry.uncertain ? ' · Uncertain' : ''}`;
 }
@@ -147,7 +158,7 @@ function renderLatest() {
 function filteredReadings() {
   const cutoff = range === 'all' ? 0 : Date.now() - Number(range) * 86400000;
   return readings().filter(item => Date.parse(item.date) >= cutoff &&
-    (historyContext === 'all' || (item.context ?? 'not-recorded') === historyContext));
+    (historyContext === 'all' || withReadingDefaults(item).context === historyContext));
 }
 
 function renderHistory() {
@@ -417,9 +428,15 @@ function setManualBusy(busy) {
   for (const button of $$('#save-manual, #close-manual, #cancel-manual')) button.disabled = busy;
 }
 async function closeManual() {
-  if (saving) return;
-  if (manualDirty && !await confirmAction('Discard this entry?', 'The manual reading has not been saved.', 'Discard')) return;
-  finishManual();
+  if (saving || manualConfirming) return;
+  if (!manualDirty) { finishManual(); return; }
+  manualConfirming = true;
+  let discard = false;
+  try { discard = await confirmAction('Discard this entry?', 'The manual reading has not been saved.', 'Discard'); }
+  finally { manualConfirming = false; }
+  const action = manualDialogAction({ event: 'confirmed', dirty: manualDirty, discard, dialogOpen: $('#manual-dialog').open });
+  if (action === 'finish') finishManual();
+  else if (action === 'reopen' && manualDraft) $('#manual-dialog').showModal();
 }
 function finishManual() {
   manualDraft = null;
@@ -431,12 +448,19 @@ $('#history-manual-entry').onclick = openManual;
 $('#close-manual').onclick = closeManual;
 $('#cancel-manual').onclick = closeManual;
 $('#manual-form').addEventListener('input', () => { manualDirty = true; });
-$('#manual-dialog').addEventListener('cancel', event => { event.preventDefault(); closeManual(); });
+// Browsers let a page cancel Escape only once per user activation, so a dirty dialog can still
+// close without Save or Discard. manualDialogAction (data.mjs) keeps one modal on top and the draft intact.
+$('#manual-dialog').addEventListener('cancel', event => {
+  const action = manualDialogAction({ event: 'cancel', dirty: manualDirty, cancelable: event.cancelable, confirmOpen: manualConfirming });
+  if (event.cancelable) event.preventDefault();
+  if (saving) return;
+  if (action === 'confirm') closeManual();
+  else if (action === 'finish') finishManual();
+});
 $('#manual-dialog').addEventListener('close', () => {
-  // Browsers let a page cancel Escape only once per user activation, so a dirty dialog can still
-  // close without Save or Discard. Never lose the draft silently: reopen it, fields intact.
-  if (manualDirty) { $('#manual-dialog').showModal(); return; }
-  manualDraft = null;
+  const action = manualDialogAction({ event: 'close', dirty: manualDirty && !!manualDraft, confirmOpen: manualConfirming });
+  if (action === 'reopen') $('#manual-dialog').showModal();
+  else if (action === 'clear') manualDraft = null;
 });
 $('#manual-form').onsubmit = async event => {
   event.preventDefault();

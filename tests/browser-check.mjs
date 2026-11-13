@@ -5,15 +5,21 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const dist = new URL('../dist/', import.meta.url);
+// Every substitution must apply. A silently skipped replace would test an app that does not exist.
+function replaced(source, search, replacement, all = false) {
+  const found = typeof search === 'string' ? source.includes(search) : search.test(source);
+  if (!found) throw new Error(`Harness substitution did not match: ${search}`);
+  return all ? source.replaceAll(search, replacement) : source.replace(search, replacement);
+}
 const html = readFileSync(new URL('index.html', dist), 'utf8');
-const data = readFileSync(new URL('data.mjs', dist), 'utf8')
-  .replaceAll('export ', '')
-  .replace("indexedDB.open('pawbreath', 1)", "indexedDB.open('pawbreath-verification-' + window.testRun, 1)");
-const app = readFileSync(new URL('app.js', dist), 'utf8')
-  .replace(/^import [\s\S]+?from '\.\/data.mjs';\n/, '')
-  .replace("import { createUpdateMonitor } from './updates.mjs';\n", '')
-  .replace('const updates = createUpdateMonitor({ storage: updateStorage, onChange(state) {', 'const updates = createUpdateMonitor({ serviceWorker: harnessServiceWorker, getRelease: async () => RELEASE, storage: updateStorage, onChange(state) {')
-  .replace('  prepareOffline();', "  $('#cache-status').textContent = 'Offline installation is excluded from the file-based test harness.';");
+let data = readFileSync(new URL('data.mjs', dist), 'utf8');
+data = replaced(data, 'export ', '', true);
+data = replaced(data, "indexedDB.open('pawbreath', 1)", "indexedDB.open('pawbreath-verification-' + window.testRun, 1)");
+let app = readFileSync(new URL('app.js', dist), 'utf8');
+app = replaced(app, /^import [\s\S]+?from '\.\/data.mjs';\n/, '');
+app = replaced(app, "import { createUpdateMonitor } from './updates.mjs';\n", '');
+app = replaced(app, 'const updates = createUpdateMonitor({ storage: updateStorage, onChange(state) {', 'const updates = createUpdateMonitor({ serviceWorker: harnessServiceWorker, getRelease: async () => RELEASE, storage: updateStorage, onChange(state) {');
+app = replaced(app, '  prepareOffline();', "  $('#cache-status').textContent = 'Offline installation is excluded from the file-based test harness.';");
 const checks = `
 const output = document.createElement('pre');
 output.id = 'test-results';
@@ -133,6 +139,23 @@ await check('Manual form retains failed saves and records the original date and 
   assert($('#reading-list').textContent.includes('Manual entry · Resting · Uncertain'), 'Manual label missing');
   assert(!$('#reading-list').querySelector('b'), 'Manual notes rendered as markup');
   showPage('measure');
+});
+await check('Repeated Escape on a dirty manual draft keeps one modal on top and Discard reachable', async () => {
+  $('#manual-entry').click();
+  $('#manual-rate').value = '26';
+  $('#manual-rate').dispatchEvent(new Event('input', {bubbles:true}));
+  const draft = manualDraft;
+  // A non-cancelable cancel (Escape without fresh user activation) is followed by the browser closing the dialog.
+  $('#manual-dialog').dispatchEvent(new Event('cancel', {cancelable:false}));
+  assert(!$('#confirm-dialog').open, 'Non-cancelable Escape opened a confirm that would sit below the reopened draft');
+  $('#manual-dialog').close();
+  await sleep(0);
+  assert($('#manual-dialog').open && manualDraft === draft && $('#manual-rate').value === '26', 'Draft lost after forced close');
+  $('#manual-dialog').dispatchEvent(new Event('cancel', {cancelable:true}));
+  assert($('#confirm-dialog').open && $('#manual-dialog').open, 'Cancelable Escape did not ask to discard');
+  $('#confirm-yes').click();
+  await sleep(0);
+  assert(!$('#manual-dialog').open && !$('#confirm-dialog').open && !manualDraft, 'Discard unreachable');
 });
 await check('Manual form rejects a future date and is unavailable during a count', async () => {
   $('#manual-entry').click();
@@ -295,15 +318,15 @@ output.textContent = 'BROWSER CHECK COMPLETE\\n' + results.join('\\n');
 document.title = results.some(line=>line.startsWith('FAIL')) ? 'Pawbreath checks FAILED' : 'Pawbreath checks PASSED';
 `;
 
-const version = readFileSync(new URL('version.mjs', dist), 'utf8').replaceAll('export ', '');
-const updates = readFileSync(new URL('updates.mjs', dist), 'utf8')
-  .replace("import { RELEASE } from './version.mjs';\n", '').replaceAll('export ', '');
+const version = replaced(readFileSync(new URL('version.mjs', dist), 'utf8'), 'export ', '', true);
+const updates = replaced(replaced(readFileSync(new URL('updates.mjs', dist), 'utf8'),
+  "import { RELEASE } from './version.mjs';\n", ''), 'export ', '', true);
 const workerStub = `const harnessRegistration = Object.assign(new EventTarget(), {active:{}, waiting:null, installing:null, update:async()=>{}});
 const harnessServiceWorker = Object.assign(new EventTarget(), {controller:{}, register:async()=>harnessRegistration, getRegistration:async()=>harnessRegistration});`;
 const script = `window.testRun = crypto.randomUUID();\n(async () => {\n${version}\n${updates}\n${workerStub}\n${data}\n${app}\n${checks}\n})().catch(error => { document.title = 'Pawbreath harness failed'; document.body.prepend(Object.assign(document.createElement('pre'), {textContent:error.stack})); });`;
 const outputPath = process.argv[2] || '/tmp/pawbreath-browser-check.html';
-const result = html.replace('  <script type="module" src="./app.js"></script>', '')
-  .replace(/(src|href)="\.\/([^"#]+)"/g, (_, attr, path) => `${attr}="${new URL(path, dist).href}"`)
-  .replace('</body>', () => `<script>${script.replaceAll('</script', '<\\/script')}</script></body>`);
+let result = replaced(html, '  <script type="module" src="./app.js"></script>', '');
+result = replaced(result, /(src|href)="\.\/([^"#]+)"/g, (_, attr, path) => `${attr}="${new URL(path, dist).href}"`);
+result = replaced(result, '</body>', () => `<script>${script.replaceAll('</script', '<\\/script')}</script></body>`);
 writeFileSync(outputPath, result);
 console.log(fileURLToPath(new URL('file://' + outputPath)));

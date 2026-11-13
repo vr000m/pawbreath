@@ -22,7 +22,7 @@ Data stays in IndexedDB on this device/browser and hostname. Clearing browser da
 
 Restore validates the complete backup and adds missing records in one transaction, preserving existing records with matching IDs. A previous backup can recover deleted readings. Export and restore share validation rules and have no fixed aggregate size/count limit; browser resources still limit capacity.
 
-New backups use format 2 and accept version 1 imports. Older app versions cannot import format 2. Manual records retain their source, context and uncertainty; CSV leaves their count/duration fields blank.
+New backups use format 2 and accept version 1 imports. Older app versions cannot import format 2. Manual records retain their source, context and uncertainty; CSV leaves their count/duration fields blank. Version 1.0 cannot export backups containing 1.1.0 manual records, so before rolling back export a backup from 1.1.0, and do not roll back while manual entries are present.
 
 ## App updates
 

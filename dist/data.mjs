@@ -1,6 +1,22 @@
 export const FORMAT = 'pawbreath';
 export const VERSION = 2;
-export const CONTEXTS = ['not-recorded', 'asleep', 'resting', 'restless'];
+// The single definition of measurement contexts. `label` is the form option, `filter` the History
+// filter option and `short` the History/latest-reading description. Order is the form order.
+export const CONTEXT_LABELS = Object.freeze({
+  'not-recorded': Object.freeze({ label: 'Not recorded', filter: 'Context not recorded', short: 'Context not recorded' }),
+  asleep: Object.freeze({ label: 'Asleep · settled sleep', filter: 'Asleep · settled sleep', short: 'Asleep' }),
+  resting: Object.freeze({ label: 'Resting · calm and awake', filter: 'Resting · calm and awake', short: 'Resting' }),
+  restless: Object.freeze({ label: 'Restless', filter: 'Restless', short: 'Restless' }),
+});
+export const CONTEXTS = Object.freeze(Object.keys(CONTEXT_LABELS));
+
+// Version 1 records predate source, context and uncertainty. Absent fields mean a timed reading
+// with no recorded context; a present but invalid value (including null) is left for validation.
+export function withReadingDefaults(reading) {
+  return { ...reading, source: reading.source === undefined ? 'timed' : reading.source,
+    context: reading.context === undefined ? 'not-recorded' : reading.context,
+    uncertain: reading.uncertain === undefined ? false : reading.uncertain };
+}
 
 function requireValue(condition, message) {
   if (!condition) throw new Error(message);
@@ -34,9 +50,7 @@ export function respiratoryRate(count, seconds) {
 export function validateReading(reading) {
   requireValue(reading && validId(reading.id) && validId(reading.dogId), 'A reading has an invalid ID.');
   requireValue(validDate(reading.date), 'A reading has an invalid date.');
-  const source = reading.source === undefined ? 'timed' : reading.source;
-  const context = reading.context === undefined ? 'not-recorded' : reading.context;
-  const uncertain = reading.uncertain === undefined ? false : reading.uncertain;
+  const { source, context, uncertain } = withReadingDefaults(reading);
   requireValue(['timed', 'manual'].includes(source), 'A reading has an invalid source.');
   requireValue(CONTEXTS.includes(context), 'Choose a valid measurement context.');
   requireValue(typeof uncertain === 'boolean', 'A reading has an invalid uncertainty flag.');
@@ -73,6 +87,22 @@ export function manualDate(value, now = Date.now()) {
   return date.toISOString();
 }
 
+// Manual-entry dialog close policy. Browsers let a page cancel Escape only once per user activation;
+// a later Escape fires a non-cancelable `cancel` and closes the dialog regardless. The invariant: a
+// dirty draft is never lost without Discard, and at most one modal is on top (the discard confirm,
+// when open, is above the manual dialog, never below it).
+//   cancel + cancelable  -> 'confirm' when dirty (ask to discard), else 'finish'
+//   cancel + !cancelable -> 'none'; the dialog closes anyway and the close event decides
+//   close                -> 'reopen' when dirty and no confirm is open; 'none' while the confirm
+//                           decides (it reopens on keep); 'clear' when clean
+//   confirm resolved     -> 'finish' on discard; on keep, 'reopen' if the dialog was closed meanwhile
+export function manualDialogAction({ event, dirty, cancelable = false, confirmOpen = false, dialogOpen = true, discard = false }) {
+  if (event === 'cancel') return !cancelable || confirmOpen ? 'none' : dirty ? 'confirm' : 'finish';
+  if (event === 'close') return !dirty ? 'clear' : confirmOpen ? 'none' : 'reopen';
+  if (event === 'confirmed') return discard ? 'finish' : dialogOpen ? 'none' : 'reopen';
+  throw new Error(`Unknown manual dialog event: ${event}`);
+}
+
 export function validateBackup(input) {
   requireValue(input && input.format === FORMAT && [1, VERSION].includes(input.version),
     'Choose a Pawbreath version 1 or 2 backup (.json).');
@@ -104,13 +134,14 @@ function csvCell(value) {
 export function toCsv(snapshot) {
   const names = new Map(snapshot.dogs.map(dog => [dog.id, dog.name]));
   const rows = [['Dog', 'Timestamp (UTC)', 'Breaths per minute', 'Breaths counted', 'Seconds', 'Notes', 'Source', 'Context', 'Uncertain']];
-  for (const reading of [...snapshot.readings].sort((a, b) => a.date.localeCompare(b.date))) {
+  // Sorting must not throw on a stored record whose date is missing or not a string.
+  const dateKey = reading => String(reading.date ?? '');
+  for (const reading of [...snapshot.readings].sort((a, b) => dateKey(a).localeCompare(dateKey(b)))) {
     // Export is a data-rescue path: normalise a valid record, otherwise write what is stored
     // rather than aborting and withholding every other reading.
     let entry;
     try { entry = validateReading(reading); } catch {
-      entry = { ...reading, source: reading.source ?? 'timed', context: reading.context ?? 'not-recorded',
-        uncertain: reading.uncertain ?? false, notes: reading.notes ?? '' };
+      entry = { ...withReadingDefaults(reading), notes: reading.notes ?? '' };
     }
     rows.push([names.get(entry.dogId) ?? '', entry.date ?? '', entry.rate ?? '', entry.count ?? '', entry.seconds ?? '',
       entry.notes, entry.source, entry.context, entry.uncertain === true ? 'Yes' : 'No']);

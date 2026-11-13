@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { validateDog, validateReading, validateBackup, makeBackup, readBackupFile, toCsv, respiratoryRate, manualDate } from '../dist/data.mjs';
+import { validateDog, validateReading, validateBackup, makeBackup, readBackupFile, toCsv, respiratoryRate, manualDate,
+  CONTEXTS, CONTEXT_LABELS, withReadingDefaults } from '../dist/data.mjs';
 
 const dog = { id: 'dog-1', name: 'Milo', threshold: null, photo: '' };
 const reading = { id: 'reading-1', dogId: dog.id, date: '2026-11-12T21:00:00.000Z', count: 12, seconds: 30, rate: 24, notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
@@ -166,4 +167,36 @@ test('manual dates preserve the original local time and reject future or nonexis
   assert.throws(() => manualDate(value, new Date(2019, 0, 1).getTime()), /future/);
   // Typing "20" into a datetime-local year field yields year 0020, which must not be saved.
   assert.throws(() => manualDate('0020-01-15T13:45'), /1970/);
+});
+
+test('CSV export sorts and keeps records whose stored date is missing or not a string', () => {
+  const undated = { ...reading, id: 'undated' };
+  delete undated.date;
+  const numeric = { ...reading, id: 'numeric', date: 1700000000000 };
+  const rows = toCsv({ dogs: [dog], readings: [reading, undated, numeric] }).split('\r\n');
+  assert.equal(rows.length, 4, 'every stored reading must be exported');
+  assert.ok(rows.some(row => row.includes('"1700000000000"')));
+  assert.ok(rows.some(row => row.startsWith('"Milo",""')));
+});
+
+test('measurement contexts have one definition used by every form, filter and label', () => {
+  for (const value of CONTEXTS) {
+    for (const field of ['label', 'filter', 'short']) {
+      assert.equal(typeof CONTEXT_LABELS[value]?.[field], 'string', `${value}.${field}`);
+      assert.ok(CONTEXT_LABELS[value][field].length > 0);
+    }
+  }
+  assert.deepEqual(CONTEXTS, Object.keys(CONTEXT_LABELS));
+  const html = readFileSync(new URL('../dist/index.html', import.meta.url), 'utf8');
+  for (const id of ['reading-context', 'manual-context', 'history-context']) assert.ok(html.includes(`<select id="${id}"`), id);
+  for (const value of CONTEXTS) assert.ok(!html.includes(`value="${value}"`), `index.html hardcodes context ${value}`);
+});
+
+test('legacy reading defaults fill only absent fields and leave present values for validation', () => {
+  const legacy = { id: 'legacy', dogId: dog.id, date: reading.date, count: 12, seconds: 30, rate: 24, notes: '' };
+  assert.deepEqual(withReadingDefaults(legacy), { ...legacy, source: 'timed', context: 'not-recorded', uncertain: false });
+  const manual = { ...legacy, source: 'manual', context: 'asleep', uncertain: true };
+  assert.deepEqual(withReadingDefaults(manual), manual);
+  assert.equal(withReadingDefaults({ ...legacy, context: null }).context, null);
+  assert.equal(validateReading(legacy).context, 'not-recorded');
 });

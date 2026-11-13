@@ -13,7 +13,7 @@ User-visible changes are recorded here. Unreleased changes have not been deploye
 
 ### Changed
 
-- JSON backup format 2 retains source, context and uncertainty; format 1 remains importable. Older app versions cannot import format 2. The device database schema remains unchanged.
+- JSON backup format 2 retains source, context and uncertainty; format 1 remains importable. Older app versions cannot import format 2. The device database schema remains unchanged. Version 1.0 cannot export backups containing 1.1.0 manual records; export from 1.1.0 before any rollback, and do not roll back while manual entries are present.
 - CSV includes the new fields, leaves manual count/duration blank, and exports all records regardless of History filters.
 
 ### Fixed
