@@ -31,15 +31,15 @@ The user chose a home-screen web app after discussing replacing Cardalis. Tinker
 ### Phase 3 — Verification
 - Exercise counts, interrupted timers, persistence, import validation/deduplication, export, responsiveness and offline reload.
 - Update usage README and record observed verification limits.
-- After verification, deploy to the newly created owner-private Site using an isolated publishing copy of this source. Verify installation on a phone separately.
+- After verification, deploy to the newly created owner-private Site using an isolated publishing copy of this source. Verify installation on a phone separately. (Superseded by "2026-11-12 Cloudflare deployment tooling" below: hosting moved to Cloudflare Workers Static Assets.)
 
 ## Technical Specifications
-All new files live under www/pawbreath. dist/index.html is the entry, dist/app.css and dist/app.js own the interface. dist/data.mjs owns validation, CSV serialization and IndexedDB transactions. dist/sw.js caches only the enumerated local app shell, dist/manifest.webmanifest and icons enable installation. tests/data.test.mjs checks validation and serialization using node:test. README.md documents operation and storage. The ignored local .openai/hosting.json holds the registered Site identity and static directory dist. No build or third-party runtime dependencies.
+All new files live under www/pawbreath. dist/index.html is the entry, dist/app.css and dist/app.js own the interface. dist/data.mjs owns validation, CSV serialization and IndexedDB transactions. dist/sw.js caches only the enumerated local app shell, dist/manifest.webmanifest and icons enable installation. tests/data.test.mjs checks validation and serialization using node:test. README.md documents operation and storage. The ignored local .openai/hosting.json holds the registered Site identity and static directory dist. (Superseded: see "2026-11-12 Cloudflare deployment tooling"; the Site identity is retained but unused.) No build or third-party runtime dependencies.
 
 IndexedDB database pawbreath, version 1, has dogs and readings stores keyed by ID. Each write uses a narrow transaction. Backups contain format pawbreath, version 1, dogs and readings. Validate length limits, finite positive numeric fields, dates, ID uniqueness, references and photo format before any write. Import is atomic and additive. Photo uploads are resized before storage. All user strings render through textContent or escaped markup.
 
 ### Integration Seams
-App calls the data module for reads/writes and registers the service worker on the same origin. Service worker performs no data writes. Sites hosts static files and supplies owner-only access. Deployment success proves hosting, while iPhone installation and private-gateway offline behavior require real-device verification.
+App calls the data module for reads/writes and registers the service worker on the same origin. Service worker performs no data writes. Sites hosts static files and supplies owner-only access. (Superseded: Cloudflare Workers Static Assets now hosts the files; see "2026-11-12 Cloudflare deployment tooling". No owner-only access control is configured in this repository.) Deployment success proves hosting, while iPhone installation and private-gateway offline behavior require real-device verification.
 
 ## Testing Notes
 Use node --test tests/data.test.mjs and browser tools against local HTTP. Verify both empty and populated states at mobile and desktop widths. Use a controlled clock for timers where supported. Inspect successful service worker install and offline reload. Keep test records confined to local preview.
