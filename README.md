@@ -46,6 +46,6 @@ Open the printed temporary file in a browser to run it. The title and an on-page
 
 Source implementation and Node checks are complete. Live browser verification and iPhone installation remain unverified. The execution environment denied the local HTTP listener, blocked local-file browser navigation, and could not resolve the hosting Git endpoint.
 
-A private Site was registered as `appgprj_6af61d3c75548191a87ab70dbd1291b0`, with its identity saved in `.openai/hosting.json`. No version was deployed. Resume publication with this existing Site identity when network access is available.
+A private Site was registered, with its identity saved locally in the ignored `.openai/hosting.json` file. No version was deployed. Resume publication with this existing Site identity when network access is available.
 
-The app now lives in the standalone [Pawbreath repository](https://github.com/vr000m/pawbreath), moved from `tinkerbox/www/pawbreath`. Run the commands above from this repository's root. Git tracks `dist/` as app source and `.openai/hosting.json` as hosting configuration; local credentials, editor state and verification output are ignored.
+The app now lives in the standalone [Pawbreath repository](https://github.com/vr000m/pawbreath), moved from `tinkerbox/www/pawbreath`. Run the commands above from this repository's root. Git tracks `dist/` as app source; local hosting configuration in `.openai/`, credentials, editor state and verification output are ignored.

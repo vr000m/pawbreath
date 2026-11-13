@@ -7,7 +7,8 @@
 *.swo
 *~
 
-# Local credentials and environment overrides
+# Local credentials, hosting identity and environment overrides
+.openai/
 .env
 .env.*
 !.env.example
@@ -25,4 +26,4 @@ test-results/
 *.log
 pawbreath-browser-check.html
 
-# dist/ is the app source; .openai/hosting.json stores its Site identity.
+# dist/ is the app source and remains tracked.
