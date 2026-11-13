@@ -72,10 +72,14 @@ Deployment is expected to need a token scoped to the target account with Workers
 
 Keep credential files outside the repository. `.env*`, `.dev.vars*`, `.openai/`, `node_modules/` and `.wrangler/` are ignored. The runtime site does not need any Cloudflare credentials.
 
+Cloudflare's dashboard separately manages the `Canonical HTTPS and apex` redirect rule and a proxied `www` A record pointing to the reserved placeholder `192.0.2.0`. The rule sends HTTP apex requests and all `www` requests to `https://pawbreath.com` with status 301, preserving paths and query strings. Keep that DNS record proxied and the redirect enabled; Wrangler does not manage these zone settings.
+
+`dist/_headers` applies a same-origin Content Security Policy, blocks framing and MIME sniffing, and keeps the service-worker script revalidated. Profile photos may use data and blob URLs. The shell cache is versioned whenever the cached assets or their security policy changes.
+
 ## Current delivery state
 
-Source implementation, the Node tests and the 11-check Chromium browser harness pass. The local preview also fits a 375px mobile viewport without horizontal overflow. Real-device installation, a two-version service-worker update during a count, and deployment remain unverified.
+Source implementation, the Node tests and the 11-check Chromium browser harness pass. The local preview fits a 375px mobile viewport without horizontal overflow. Production HTTPS and the HTTP/`www` redirects have been verified. The user reports completing the phone installation, offline reopening, persistence, backup/restore and worker-update checks. The merge deployment will publish the latest service-worker and security-header fixes.
 
-A private Site was originally registered, with its identity saved locally in the ignored `.openai/hosting.json` file. Cloudflare Workers is now the deployment target; the Sites identity is retained locally but is not used by the recipes above. No production deployment has been performed.
+A private Site was originally registered, with its identity saved locally in the ignored `.openai/hosting.json` file. Cloudflare Workers is now the production host; the Sites identity is retained locally but is not used by the recipes above.
 
 The app now lives in the standalone [Pawbreath repository](https://github.com/vr000m/pawbreath), moved from `tinkerbox/www/pawbreath`. Run the commands above from this repository's root. Git tracks `dist/` as app source; local hosting configuration in `.openai/`, credentials, editor state and verification output are ignored.

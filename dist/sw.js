@@ -1,5 +1,5 @@
 // Bump the cache version whenever an app-shell asset changes.
-const CACHE = 'pawbreath-shell-v3';
+const CACHE = 'pawbreath-shell-v4';
 // The scope root is the app shell document. Do not also list index.html: static hosts such as
 // Cloudflare Workers Assets redirect it to the root, and installation rejects redirected responses.
 const ASSETS = ['./', './app.css', './app.js', './data.mjs',
