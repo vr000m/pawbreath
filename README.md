@@ -1,6 +1,6 @@
 # Pawbreath
 
-A mobile-first breathing journal for dogs. The app supports timed 30/60-second tap counting, multiple dog profiles and photos, notes, date-filtered charts, owner-entered thresholds, CSV export, and versioned JSON backups.
+A mobile-first breathing journal for dogs. The app supports timed 30/60-second tap counting, multiple dog profiles and photos, measurement context, manual entries, notes, date-filtered charts, owner-entered thresholds, CSV export, and versioned JSON backups.
 
 ![Pawbreath measurement screen with a sample Milo profile and latest reading](docs/images/pawbreath-preview.png)
 
@@ -24,11 +24,24 @@ To install on an iPhone, open the hosted HTTPS URL in Safari, choose Share, then
 - Download JSON backups from Settings to protect readings against device loss or clearing browser data. CSV exports include all dogs and use UTC timestamps.
 - Restore validates the complete backup before beginning one transaction. It adds missing IDs and keeps existing records on conflicts. A previous backup can restore a reading deleted since that backup.
 - Backups have no fixed record-count or file-size limit. Export and restore validate the same format and record rules; available browser memory and device storage limit how large a journal can be processed.
+- Timed readings can record asleep/resting/restless context and an uncertainty flag at save time. Existing readings show context as not recorded; no state is inferred from old notes.
+- Use “Enter a previous reading” on Measure or “Enter a reading” on History to enter a rate and its original date/time in the device’s current time zone. Manual entries are labelled and retain no invented raw count or duration. Future dates are rejected.
+- New JSON backups use format version 2 and retain source, context and uncertainty; version 1 backups remain importable. Older app versions cannot import version 2 backups. CSV includes the new fields and leaves count/duration blank for manual entries. IndexedDB stays at schema version 1 because the existing stores need no structural migration.
 - Each measurement starts with an explicit Start action. Taps at or after the deadline do not count. Zero-breath sessions cannot be saved. Leaving the app during a count cancels that measurement.
 - Save confirms only after the database transaction commits. A failed save retains the completed reading for retry.
 - Thresholds start empty. Enter the value your vet recommends. The app displays a comparison at or above that value.
 - Profiles can be edited. Individual readings can be deleted after confirmation. Dog deletion and cloud accounts are outside this version's scope.
-- Service-worker updates wait until all existing app windows close. Increment `CACHE` in `dist/sw.js` whenever shipping changed shell assets.
+- Service-worker updates wait until all existing app windows close. They never force a reload or interrupt a measurement or unsaved form.
+
+## App version and home-screen updates
+
+Settings → **App version and updates** shows the running release and build ID. **Check for updates** checks the published release over the network, with a last-successful-check timestamp. Checks also run on launch, reconnection and when resuming the app (at most once per minute for resume events). “Offline ready” means the shell is installed; it does not mean the release is current.
+
+When **Update ready** appears, finish and save your reading, fully close the home-screen app and any Pawbreath browser tabs, then reopen. The waiting update can activate without a connection once downloaded. Check again online to confirm that the running release/build matches the published one. While offline, the app shows its running version and previous check time, without claiming to know the latest published version. Updates retain the journal in IndexedDB.
+
+For releases, `package.json` owns the version. Use `npm version 1.1.1 --no-git-tag-version` (substitute the intended version), then `npm run release` after the final app edits. Commit the package/lockfile and generated `dist/version.mjs`, `dist/release.json`, and `dist/sw.js` along with the changed app files. The build ID hashes deployed source, including the worker and response headers. `npm test` and `just deploy` reject stale generated metadata. The running app, published release and offline cache use the same identity; backup format and database schema versions remain independent.
+
+The version/status UI first appears after upgrading from older releases. Until then, open the old app online, allow its update to download, fully close its windows and reopen. The new UI cannot be displayed by an older cached app before that upgrade.
 
 ## Verify
 
@@ -39,7 +52,7 @@ node --check dist/data.mjs
 node --check dist/sw.js
 ```
 
-An optional browser harness combines the current source into a temporary HTML file and uses a separate test database. It exercises real IndexedDB writes, aborted commits, import rollback, concurrent connections, duplicate restores, hostile text, timer boundaries, and interrupted sessions.
+An optional browser harness combines the current source into a temporary HTML file and uses a fresh test database on every load. It exercises real IndexedDB writes, aborted commits, import rollback, concurrent connections, duplicate restores, hostile text, timer boundaries, interrupted sessions, manual entries and context. A simulated worker registration verifies that update notices and checks preserve active counts, pending results and manual drafts.
 
 ```sh
 node tests/browser-check.mjs
@@ -78,7 +91,9 @@ Cloudflare's dashboard separately manages the `Canonical HTTPS and apex` redirec
 
 ## Current delivery state
 
-Source implementation, the Node tests and the 11-check Chromium browser harness pass. The local preview fits a 375px mobile viewport without horizontal overflow. Production HTTPS and the HTTP/`www` redirects have been verified. The user reports completing the phone installation, offline reopening, persistence, backup/restore and worker-update checks. The merge deployment will publish the latest service-worker and security-header fixes.
+The 1.1.0 feature branch includes measurement context, manual entries and the release/update UI. All 36 Node tests, syntax checks and the 14-check Chromium browser harness pass. The manual form and version panel have been visually checked at 375px without horizontal overflow; the manual form scrolls to its save controls. The deployment dry run passes. This release has not been deployed. A real served two-release service-worker upgrade and an iPhone check of this new release remain pending; the browser harness simulates worker registration and the Node tests simulate cache lifecycle.
+
+For the previously deployed baseline, production HTTPS and the HTTP/`www` redirects have been verified. The user reports completing phone installation, offline reopening, persistence, backup/restore and worker-update checks. A first resting-dog measurement remains pending.
 
 A private Site was originally registered, with its identity saved locally in the ignored `.openai/hosting.json` file. Cloudflare Workers is now the production host; the Sites identity is retained locally but is not used by the recipes above.
 

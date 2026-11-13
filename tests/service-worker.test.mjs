@@ -72,7 +72,20 @@ test('worker ignores unrelated origins, paths, and write requests', async () => 
   await instance.lifecycle('install');
   assert.equal(instance.request('https://another.test/'), undefined);
   assert.equal(instance.request(scope + 'private-data.json'), undefined);
+  assert.equal(instance.request(scope + 'release.json'), undefined);
   assert.equal(instance.request(scope, 'POST'), undefined);
+});
+
+test('installing an update leaves activation to the browser and preserves existing journal storage', async () => {
+  const instance = worker(async url => asset(url));
+  // The worker harness has no skipWaiting, IndexedDB, or reload API. Installation
+  // must not require any of them, or delete the active cache while its clients run.
+  instance.stores.set('pawbreath-shell-v5', new Map([[scope, asset(scope)]]));
+  await instance.lifecycle('install');
+  assert.ok(instance.stores.has('pawbreath-shell-v5'));
+  assert.equal(instance.claimed, false);
+  await instance.lifecycle('activate');
+  assert.ok(!instance.stores.has('pawbreath-shell-v5'));
 });
 
 test('activation removes obsolete app caches and preserves unrelated caches', async () => {

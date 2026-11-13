@@ -11,6 +11,8 @@ const data = readFileSync(new URL('data.mjs', dist), 'utf8')
   .replace("indexedDB.open('pawbreath', 1)", "indexedDB.open('pawbreath-verification-' + window.testRun, 1)");
 const app = readFileSync(new URL('app.js', dist), 'utf8')
   .replace(/^import [\s\S]+?from '\.\/data.mjs';\n/, '')
+  .replace("import { createUpdateMonitor } from './updates.mjs';\n", '')
+  .replace('const updates = createUpdateMonitor({ storage: updateStorage, onChange(state) {', 'const updates = createUpdateMonitor({ serviceWorker: harnessServiceWorker, getRelease: async () => RELEASE, storage: updateStorage, onChange(state) {')
   .replace('  prepareOffline();', "  $('#cache-status').textContent = 'Offline installation is excluded from the file-based test harness.';");
 const checks = `
 const output = document.createElement('pre');
@@ -49,7 +51,11 @@ await check('30-second count, undo, deadline, save and persisted result', async 
   $('#breath-button').click();
   assert(pending.count === 12 && pending.rate === 24, 'Deadline tap incorrectly counted');
   $('#reading-notes').value = 'Quiet <script>window.unwanted = true<\\/script>';
+  $('#reading-context').value = 'asleep';
+  $('#reading-uncertain').checked = true;
   await $('#save-reading').onclick();
+  const savedReading = (await readAll(db)).readings[0];
+  assert(savedReading.context === 'asleep' && savedReading.uncertain && savedReading.source === 'timed', 'Context not saved');
   assert((await readAll(db)).readings.length === 1, 'Saved reading missing');
   assert(!pending, 'Result not cleared after commit');
 });
@@ -97,6 +103,81 @@ await check('Hidden document cancels an active count', async () => {
   document.dispatchEvent(new Event('visibilitychange'));
   delete document.hidden;
   assert(!session && !pending, 'Background count survived');
+});
+await check('Manual form retains failed saves and records the original date and context', async () => {
+  $('#manual-entry').click();
+  $('#manual-rate').value = '23.5';
+  $('#manual-date').value = '2020-01-15T13:45';
+  $('#manual-context').value = 'resting';
+  $('#manual-uncertain').checked = true;
+  $('#manual-notes').value = 'From paper <b>journal</b>';
+  const id = manualDraft.id;
+  const originalPut = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function(...args) {
+    const request = originalPut.apply(this,args);
+    request.addEventListener('success',()=>this.transaction.abort(),{once:true});
+    return request;
+  };
+  try { await $('#manual-form').onsubmit({preventDefault(){}}); }
+  finally { IDBObjectStore.prototype.put = originalPut; }
+  assert($('#manual-dialog').open && manualDraft.id === id, 'Failed save lost manual draft');
+  assert($('#manual-rate').value === '23.5' && $('#manual-error').textContent.includes('Could not save'), 'Failed save lost form');
+  assert(!(await readAll(db)).readings.some(r=>r.id===id), 'Aborted manual save committed');
+  await $('#manual-form').onsubmit({preventDefault(){}});
+  const saved = (await readAll(db)).readings.find(r=>r.id===id);
+  assert(saved.source === 'manual' && saved.count === null && saved.seconds === null, 'Manual source wrong');
+  assert(saved.date === new Date(2020,0,15,13,45).toISOString() && saved.rate === 23.5, 'Original measurement changed');
+  assert(saved.context === 'resting' && saved.uncertain, 'Manual context missing');
+  showPage('history');
+  document.querySelector('[data-range="all"]').click();
+  assert($('#reading-list').textContent.includes('Manual entry · Resting · Uncertain'), 'Manual label missing');
+  assert(!$('#reading-list').querySelector('b'), 'Manual notes rendered as markup');
+  showPage('measure');
+});
+await check('Manual form rejects a future date and is unavailable during a count', async () => {
+  $('#manual-entry').click();
+  $('#manual-rate').value = '24';
+  $('#manual-date').value = '9999-01-01T12:00';
+  await $('#manual-form').onsubmit({preventDefault(){}});
+  assert($('#manual-dialog').open && $('#manual-error').textContent.includes('future'), 'Future date accepted');
+  await closeManual();
+  $('#start').click();
+  assert($('#manual-entry').disabled && $('#history-manual-entry').disabled, 'Manual entry available during count');
+  $('#cancel').click();
+});
+await check('Checking and downloading updates preserves active counts, results and manual drafts', async () => {
+  $('#start').click();
+  $('#breath-button').click();
+  const active = session;
+  await updates.check();
+  assert(session === active && session.count === 1, 'Update check interrupted counting');
+  assert($('#app-version').textContent.includes(RELEASE.build), 'Running build missing');
+  assert($('#update-status').textContent.includes('latest published'), 'Latest check missing');
+  const worker = new EventTarget();
+  worker.postMessage = () => { throw new Error('Must not force update activation'); };
+  harnessRegistration.installing = worker;
+  harnessRegistration.dispatchEvent(new Event('updatefound'));
+  harnessRegistration.installing = null;
+  harnessRegistration.waiting = worker;
+  worker.state = 'installed';
+  worker.dispatchEvent(new Event('statechange'));
+  assert(session === active && !$('#update-notice').hidden, 'Waiting update interrupted count or hid notice');
+  fakeNow += duration * 1000;
+  tick();
+  const completed = pending;
+  $('#reading-notes').value = 'Keep this unsaved note';
+  await updates.check();
+  assert(pending === completed && $('#reading-notes').value === 'Keep this unsaved note', 'Update lost result');
+  await $('#save-reading').onclick();
+  $('#manual-entry').click();
+  $('#manual-rate').value = '25';
+  $('#manual-rate').dispatchEvent(new Event('input', {bubbles:true}));
+  const draft = manualDraft;
+  await updates.check();
+  assert(manualDraft === draft && manualDirty && $('#manual-rate').value === '25', 'Update lost manual draft');
+  finishManual();
+  harnessRegistration.waiting = null;
+  updates.refresh();
 });
 await check('Concurrent connections preserve distinct records', async () => {
   const second = await openDatabase();
@@ -148,7 +229,12 @@ output.textContent = 'BROWSER CHECK COMPLETE\\n' + results.join('\\n');
 document.title = results.some(line=>line.startsWith('FAIL')) ? 'Pawbreath checks FAILED' : 'Pawbreath checks PASSED';
 `;
 
-const script = `window.testRun = '${Date.now()}';\n(async () => {\n${data}\n${app}\n${checks}\n})().catch(error => { document.title = 'Pawbreath harness failed'; document.body.prepend(Object.assign(document.createElement('pre'), {textContent:error.stack})); });`;
+const version = readFileSync(new URL('version.mjs', dist), 'utf8').replaceAll('export ', '');
+const updates = readFileSync(new URL('updates.mjs', dist), 'utf8')
+  .replace("import { RELEASE } from './version.mjs';\n", '').replaceAll('export ', '');
+const workerStub = `const harnessRegistration = Object.assign(new EventTarget(), {active:{}, waiting:null, installing:null, update:async()=>{}});
+const harnessServiceWorker = Object.assign(new EventTarget(), {controller:{}, register:async()=>harnessRegistration, getRegistration:async()=>harnessRegistration});`;
+const script = `window.testRun = crypto.randomUUID();\n(async () => {\n${version}\n${updates}\n${workerStub}\n${data}\n${app}\n${checks}\n})().catch(error => { document.title = 'Pawbreath harness failed'; document.body.prepend(Object.assign(document.createElement('pre'), {textContent:error.stack})); });`;
 const outputPath = process.argv[2] || '/tmp/pawbreath-browser-check.html';
 const result = html.replace('  <script type="module" src="./app.js"></script>', '')
   .replace(/(src|href)="\.\/([^"#]+)"/g, (_, attr, path) => `${attr}="${new URL(path, dist).href}"`)

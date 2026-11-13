@@ -1,5 +1,6 @@
 export const FORMAT = 'pawbreath';
-export const VERSION = 1;
+export const VERSION = 2;
+export const CONTEXTS = ['not-recorded', 'asleep', 'resting', 'restless'];
 
 function requireValue(condition, message) {
   if (!condition) throw new Error(message);
@@ -33,18 +34,46 @@ export function respiratoryRate(count, seconds) {
 export function validateReading(reading) {
   requireValue(reading && validId(reading.id) && validId(reading.dogId), 'A reading has an invalid ID.');
   requireValue(validDate(reading.date), 'A reading has an invalid date.');
-  requireValue(Number.isInteger(reading.count) && reading.count > 0 && reading.count <= 10000,
-    'A reading must contain a positive breath count.');
-  requireValue([30, 60].includes(reading.seconds), 'A reading must use a 30- or 60-second count.');
-  requireValue(reading.rate === respiratoryRate(reading.count, reading.seconds), 'A reading has an inconsistent breathing rate.');
+  const source = reading.source === undefined ? 'timed' : reading.source;
+  const context = reading.context === undefined ? 'not-recorded' : reading.context;
+  const uncertain = reading.uncertain === undefined ? false : reading.uncertain;
+  requireValue(['timed', 'manual'].includes(source), 'A reading has an invalid source.');
+  requireValue(CONTEXTS.includes(context), 'Choose a valid measurement context.');
+  requireValue(typeof uncertain === 'boolean', 'A reading has an invalid uncertainty flag.');
+  if (source === 'timed') {
+    requireValue(Number.isInteger(reading.count) && reading.count > 0 && reading.count <= 10000,
+      'A reading must contain a positive breath count.');
+    requireValue([30, 60].includes(reading.seconds), 'A reading must use a 30- or 60-second count.');
+    requireValue(reading.rate === respiratoryRate(reading.count, reading.seconds), 'A reading has an inconsistent breathing rate.');
+  } else {
+    requireValue(reading.count === null && reading.seconds === null,
+      'Manual readings must not invent a breath count or measurement duration.');
+    requireValue(Number.isFinite(reading.rate) && reading.rate > 0 && reading.rate <= 20000 &&
+      Math.round(reading.rate * 10) / 10 === reading.rate,
+      'Enter a positive breathing rate with at most one decimal place (maximum 20,000).');
+  }
   requireValue(typeof reading.notes === 'string' && reading.notes.length <= 2000, 'Notes must contain at most 2,000 characters.');
   return { id: reading.id, dogId: reading.dogId, date: reading.date, count: reading.count,
-    seconds: reading.seconds, rate: reading.rate, notes: reading.notes };
+    seconds: reading.seconds, rate: reading.rate, notes: reading.notes, source, context, uncertain };
+}
+
+// datetime-local is interpreted in this device's time zone; reject normalization of
+// nonexistent dates/times rather than silently changing the original observation.
+export function manualDate(value, now = Date.now()) {
+  requireValue(typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value),
+    'Enter the original measurement date and time.');
+  const date = new Date(value);
+  const parts = value.split(/[-T:]/).map(Number);
+  requireValue(Number.isFinite(date.getTime()) && date.getFullYear() === parts[0] &&
+    date.getMonth() + 1 === parts[1] && date.getDate() === parts[2] &&
+    date.getHours() === parts[3] && date.getMinutes() === parts[4], 'Enter a valid local date and time.');
+  requireValue(date.getTime() <= now, 'The measurement date cannot be in the future.');
+  return date.toISOString();
 }
 
 export function validateBackup(input) {
-  requireValue(input && input.format === FORMAT && input.version === VERSION,
-    'Choose a Pawbreath version 1 backup (.json).');
+  requireValue(input && input.format === FORMAT && [1, VERSION].includes(input.version),
+    'Choose a Pawbreath version 1 or 2 backup (.json).');
   requireValue(Array.isArray(input.dogs) && Array.isArray(input.readings), 'This backup is incomplete.');
   const dogs = input.dogs.map(validateDog);
   const readings = input.readings.map(validateReading);
@@ -72,9 +101,11 @@ function csvCell(value) {
 
 export function toCsv(snapshot) {
   const names = new Map(snapshot.dogs.map(dog => [dog.id, dog.name]));
-  const rows = [['Dog', 'Timestamp (UTC)', 'Breaths per minute', 'Breaths counted', 'Seconds', 'Notes']];
+  const rows = [['Dog', 'Timestamp (UTC)', 'Breaths per minute', 'Breaths counted', 'Seconds', 'Notes', 'Source', 'Context', 'Uncertain']];
   for (const reading of [...snapshot.readings].sort((a, b) => a.date.localeCompare(b.date))) {
-    rows.push([names.get(reading.dogId) ?? '', reading.date, reading.rate, reading.count, reading.seconds, reading.notes]);
+    const entry = validateReading(reading);
+    rows.push([names.get(entry.dogId) ?? '', entry.date, entry.rate, entry.count ?? '', entry.seconds ?? '',
+      entry.notes, entry.source, entry.context, entry.uncertain ? 'Yes' : 'No']);
   }
   return '\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n');
 }

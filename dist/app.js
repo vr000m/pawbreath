@@ -1,5 +1,6 @@
 import { openDatabase, readAll, saveDog, saveReading, deleteReading, restoreBackup,
-  readBackupFile, makeBackup, toCsv, respiratoryRate } from './data.mjs';
+  readBackupFile, makeBackup, toCsv, respiratoryRate, manualDate } from './data.mjs';
+import { createUpdateMonitor } from './updates.mjs';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -11,6 +12,8 @@ let duration = 30;
 let range = '30';
 let session = null;
 let pending = null;
+let manualDraft = null;
+let manualDirty = false;
 let timer = null;
 let saving = false;
 let editId = null;
@@ -35,6 +38,11 @@ function toast(message) {
 }
 
 function dog() { return snapshot.dogs.find(item => item.id === selectedId); }
+function readingDetails(entry) {
+  const context = { asleep: 'Asleep', resting: 'Resting', restless: 'Restless' }[entry.context] ?? 'Context not recorded';
+  const source = entry.source === 'manual' ? 'Manual entry' : `${entry.count} breaths counted over ${entry.seconds} seconds`;
+  return `${source} · ${context}${entry.uncertain ? ' · Uncertain' : ''}`;
+}
 function readings() {
   return snapshot.readings.filter(item => item.dogId === selectedId).sort((a, b) => b.date.localeCompare(a.date));
 }
@@ -129,7 +137,10 @@ function renderLatest() {
   unit.textContent = 'breaths / min';
   const date = document.createElement('p');
   date.textContent = dateFormat.format(new Date(latest.date));
-  container.append(number, unit, date);
+  const meta = document.createElement('p');
+  meta.className = 'reading-meta';
+  meta.textContent = readingDetails(latest);
+  container.append(number, unit, date, meta);
 }
 
 function filteredReadings() {
@@ -158,7 +169,7 @@ function renderHistory() {
     date.textContent = dateFormat.format(new Date(entry.date));
     const meta = document.createElement('p');
     meta.className = 'reading-meta';
-    meta.textContent = `${entry.count} breaths counted over ${entry.seconds} seconds`;
+    meta.textContent = readingDetails(entry);
     details.append(date, meta);
     if (entry.notes) {
       const notes = document.createElement('p');
@@ -237,6 +248,7 @@ function drawChart() {
 function setLocked(locked) {
   $('#selected-dog').disabled = locked || !snapshot.dogs.length;
   for (const element of $$('[data-page], [data-duration], #add-dog, #edit-dog')) element.disabled = locked;
+  for (const element of $$('#manual-entry, #history-manual-entry')) element.disabled = locked || !dog() || !db;
 }
 
 function resetCounter(message = '') {
@@ -253,6 +265,8 @@ function resetCounter(message = '') {
   $('#cancel').hidden = true;
   $('#result').hidden = true;
   $('#reading-notes').value = '';
+  $('#reading-context').value = 'not-recorded';
+  $('#reading-uncertain').checked = false;
   $('#counter-instruction').textContent = 'Wait until your dog is settled or asleep.';
   $('#counter-status').textContent = message || (dog() ? 'Start the timer, then tap for each breath.' : 'Add your dog to begin.');
   setLocked(false);
@@ -282,7 +296,7 @@ function completeCount() {
   if (!finished.count) { resetCounter('No breaths were counted. Please try again.'); return; }
   pending = { id: crypto.randomUUID(), dogId: finished.dogId, date: finished.date,
     count: finished.count, seconds: finished.seconds,
-    rate: respiratoryRate(finished.count, finished.seconds), notes: '' };
+    rate: respiratoryRate(finished.count, finished.seconds), notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
   $('#timer-progress').value = finished.seconds;
   $('#timer-label').textContent = 'Measurement complete';
   $('#breath-button').disabled = true;
@@ -354,7 +368,7 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', () => { if (session) cancelCount(); });
 window.addEventListener('beforeunload', event => {
-  if (session || pending || saving) { event.preventDefault(); event.returnValue = ''; }
+  if (session || pending || saving || (manualDraft && manualDirty)) { event.preventDefault(); event.returnValue = ''; }
 });
 $('#save-reading').onclick = async () => {
   if (!pending || saving) return;
@@ -362,6 +376,8 @@ $('#save-reading').onclick = async () => {
   $('#save-reading').disabled = true;
   $('#discard').disabled = true;
   pending.notes = $('#reading-notes').value.trim();
+  pending.context = $('#reading-context').value;
+  pending.uncertain = $('#reading-uncertain').checked;
   try {
     await saveReading(db, pending);
     pending = null;
@@ -375,6 +391,62 @@ $('#save-reading').onclick = async () => {
 $('#discard').onclick = async () => {
   if (await confirmAction('Discard this count?', 'The completed measurement has not been saved.', 'Discard')) {
     pending = null; resetCounter();
+  }
+};
+
+function openManual() {
+  if (!db || !dog() || session || pending || saving || manualDraft) return;
+  manualDraft = { id: crypto.randomUUID(), dogId: selectedId };
+  manualDirty = false;
+  $('#manual-form').reset();
+  $('#manual-error').textContent = '';
+  $('#manual-dog').textContent = `For ${dog().name}`;
+  $('#manual-timezone').textContent = `Times use this device’s time zone (${Intl.DateTimeFormat().resolvedOptions().timeZone}).`;
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  $('#manual-date').value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  $('#manual-dialog').showModal();
+  $('#manual-rate').focus();
+}
+async function closeManual() {
+  if (saving) return;
+  if (manualDirty && !await confirmAction('Discard this entry?', 'The manual reading has not been saved.', 'Discard')) return;
+  finishManual();
+}
+function finishManual() {
+  manualDraft = null;
+  manualDirty = false;
+  $('#manual-dialog').close();
+}
+$('#manual-entry').onclick = openManual;
+$('#history-manual-entry').onclick = openManual;
+$('#close-manual').onclick = closeManual;
+$('#cancel-manual').onclick = closeManual;
+$('#manual-form').addEventListener('input', () => { manualDirty = true; });
+$('#manual-dialog').addEventListener('cancel', event => { event.preventDefault(); closeManual(); });
+$('#manual-dialog').addEventListener('close', () => {
+  if (!$('#manual-dialog').open) { manualDraft = null; manualDirty = false; }
+});
+$('#manual-form').onsubmit = async event => {
+  event.preventDefault();
+  if (!manualDraft || saving || !$('#manual-form').reportValidity()) return;
+  saving = true;
+  $('#manual-fields').disabled = true;
+  for (const button of $$('#save-manual, #close-manual, #cancel-manual')) button.disabled = true;
+  try {
+    const entry = { ...manualDraft, source: 'manual', count: null, seconds: null,
+      rate: Number($('#manual-rate').value), date: manualDate($('#manual-date').value),
+      context: $('#manual-context').value, uncertain: $('#manual-uncertain').checked, notes: $('#manual-notes').value.trim() };
+    await saveReading(db, entry);
+    finishManual();
+    await refreshAfterWrite();
+    notifyChange();
+    toast('Manual reading saved to your journal.');
+  } catch (error) { $('#manual-error').textContent = `Could not save the reading. ${error.message}`; }
+  finally {
+    saving = false;
+    $('#manual-fields').disabled = false;
+    for (const button of $$('#save-manual, #close-manual, #cancel-manual')) button.disabled = false;
   }
 };
 
@@ -534,42 +606,35 @@ $('#install').onclick = async () => {
 function connectionStatus(ready = false) {
   $('#offline-status').textContent = navigator.onLine ? (ready ? 'Offline ready' : 'On this device') : 'Offline';
 }
-window.addEventListener('online', () => connectionStatus(!!navigator.serviceWorker?.controller));
-window.addEventListener('offline', () => connectionStatus());
-
-async function prepareOffline() {
-  connectionStatus();
-  if (!('serviceWorker' in navigator)) {
-    $('#cache-status').textContent = 'Offline loading is unavailable in this browser. Use a current browser over HTTPS.';
-    return;
+let updateStorage;
+try { updateStorage = window.localStorage; } catch { /* Version checks do not require storage. */ }
+const updates = createUpdateMonitor({ storage: updateStorage, onChange(state) {
+  const label = release => `${release.version} · build ${release.build}`;
+  $('#app-version').textContent = `Running ${label(state.running)}`;
+  $('#published-version').textContent = state.latest ? `Published ${label(state.latest)}` : '';
+  $('#update-status').textContent = state.message;
+  $('#last-update-check').textContent = state.checked
+    ? `Last successful check: ${dateFormat.format(new Date(state.checked))}` : 'No successful update check yet.';
+  $('#check-updates').disabled = state.checking;
+  $('#update-notice').hidden = !state.waiting && !state.activationChanged;
+  $('#update-notice').textContent = state.message;
+  $('#cache-status').textContent = !state.supported ? 'Offline loading is unavailable in this browser. Use a current browser over HTTPS.'
+    : state.offlineReady ? 'App saved for offline use. Offline readiness does not indicate whether the app is up to date.'
+    : 'Offline setup is not complete. Connect to the internet and check for updates.';
+  connectionStatus(state.offlineReady);
+} });
+function prepareOffline() { return updates.check(); }
+$('#check-updates').onclick = () => updates.check();
+window.addEventListener('online', () => updates.check());
+window.addEventListener('offline', () => updates.refresh());
+// Home-screen apps can stay alive for days. Refresh update information when resumed.
+let lastResumeCheck = 0;
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && Date.now() - lastResumeCheck > 60000) {
+    lastResumeCheck = Date.now();
+    updates.check();
   }
-  try {
-    const registration = await navigator.serviceWorker.register('./sw.js');
-    if (!registration.active) {
-      const worker = registration.installing || registration.waiting;
-      if (!worker) throw new Error('Offline worker unavailable.');
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => finish(new Error('Offline setup timed out.')), 20000);
-        function finish(error) {
-          clearTimeout(timeout);
-          worker.removeEventListener('statechange', changed);
-          if (error) reject(error);
-          else resolve();
-        }
-        function changed() {
-          if (worker.state === 'activated') finish();
-          if (worker.state === 'redundant') finish(new Error('Offline setup failed.'));
-        }
-        worker.addEventListener('statechange', changed);
-        changed();
-      });
-    }
-    connectionStatus(true);
-    $('#cache-status').textContent = 'App saved for offline use. Updates take effect after all open app windows close.';
-  } catch {
-    $('#cache-status').textContent = 'Offline setup did not complete. Reopen the app with an internet connection to try again.';
-  }
-}
+});
 
 try {
   db = await openDatabase();

@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { validateDog, validateReading, validateBackup, makeBackup, readBackupFile, toCsv, respiratoryRate } from '../dist/data.mjs';
+import { validateDog, validateReading, validateBackup, makeBackup, readBackupFile, toCsv, respiratoryRate, manualDate } from '../dist/data.mjs';
 
 const dog = { id: 'dog-1', name: 'Milo', threshold: null, photo: '' };
-const reading = { id: 'reading-1', dogId: dog.id, date: '2026-11-12T21:00:00.000Z', count: 12, seconds: 30, rate: 24, notes: '' };
-const backup = () => ({ format: 'pawbreath', version: 1, dogs: [{ ...dog }], readings: [{ ...reading }] });
+const reading = { id: 'reading-1', dogId: dog.id, date: '2026-11-12T21:00:00.000Z', count: 12, seconds: 30, rate: 24, notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
+const backup = () => ({ format: 'pawbreath', version: 2, dogs: [{ ...dog }], readings: [{ ...reading }] });
 
 test('rate calculation retains raw count and handles both supported durations', () => {
   assert.equal(respiratoryRate(12, 30), 24);
@@ -69,7 +69,7 @@ test('file reader rejects invalid JSON, invalid records and unreadable files', a
 
 test('reject incompatible, incomplete, duplicate and orphaned backups', () => {
   for (const modify of [
-    value => { value.version = 2; },
+    value => { value.version = 3; },
     value => { delete value.dogs; },
     value => { value.dogs.push({ ...dog }); },
     value => { value.readings.push({ ...reading }); },
@@ -124,4 +124,38 @@ test('manifest icon sizes, app references and cached shell files exist', () => {
   const worker = readFileSync(new URL('sw.js', base), 'utf8');
   assert.ok(!worker.includes('skipWaiting('));
   for (const [, path] of worker.matchAll(/'(\.\/[^']*)'/g)) assert.ok(existsSync(new URL(path, base)), path);
+});
+
+
+test('version 1 backups migrate without guessing measurement context', () => {
+  const legacy = { ...reading };
+  delete legacy.source; delete legacy.context; delete legacy.uncertain;
+  const migrated = validateBackup({ format: 'pawbreath', version: 1, dogs: [dog], readings: [legacy] });
+  assert.equal(migrated.version, 2);
+  assert.deepEqual(migrated.readings[0], reading);
+});
+
+test('manual readings round-trip with context and uncertainty without invented counts', () => {
+  const manual = { ...reading, source: 'manual', count: null, seconds: null, rate: 23.5, context: 'resting', uncertain: true };
+  const restored = validateBackup(JSON.parse(JSON.stringify(makeBackup({ dogs: [dog], readings: [reading, { ...manual, id: 'manual-1' }] }))));
+  assert.deepEqual(restored.readings[1], { ...manual, id: 'manual-1' });
+  const csv = toCsv({ dogs: [dog], readings: [manual] });
+  assert.ok(csv.includes('"23.5","",""'));
+  assert.ok(csv.includes('"manual","resting","Yes"'));
+  for (const patch of [{ count: 12 }, { seconds: 30 }, { rate: 0 }, { rate: Infinity }, { rate: 23.55 },
+    { source: 'imported' }, { context: 'sleepy' }, { context: null }, { uncertain: 'yes' }]) {
+    assert.throws(() => validateReading({ ...manual, ...patch }));
+  }
+  for (const context of ['asleep', 'resting', 'restless', 'not-recorded']) {
+    assert.equal(validateReading({ ...reading, context, uncertain: true }).context, context);
+  }
+});
+
+test('manual dates preserve the original local time and reject future or nonexistent dates', () => {
+  const value = '2020-01-15T13:45';
+  assert.equal(manualDate(value), new Date(2020, 0, 15, 13, 45).toISOString());
+  for (const invalid of ['', 'tomorrow', '2020-02-30T13:45', '2020-13-15T13:45', '2020-01-15T25:45']) {
+    assert.throws(() => manualDate(invalid));
+  }
+  assert.throws(() => manualDate(value, new Date(2019, 0, 1).getTime()), /future/);
 });
