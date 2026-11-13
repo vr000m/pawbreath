@@ -14,7 +14,7 @@ From this directory, start a static server.
 python3 -m http.server 8766 --bind 127.0.0.1 --directory dist
 ```
 
-Open <http://127.0.0.1:8766>. The app has no package installation or build step. Use HTTP on localhost or HTTPS when hosted, because browser modules, service workers, and home-screen installation need the appropriate origin.
+Open <http://127.0.0.1:8766>. Running the app this way needs no package installation or build step; the Cloudflare tools below are only for deployment and the Workers preview. Use HTTP on localhost or HTTPS when hosted, because browser modules, service workers, and home-screen installation need the appropriate origin.
 
 To install on an iPhone, open the hosted HTTPS URL in Safari, choose Share, then Add to Home Screen. On Android, use the browser's Install app or Add to Home screen action. Open the app online once and check that it reports “Offline ready” before relying on offline loading.
 
