@@ -408,6 +408,10 @@ function openManual() {
   $('#manual-dialog').showModal();
   $('#manual-rate').focus();
 }
+function setManualBusy(busy) {
+  $('#manual-fields').disabled = busy;
+  for (const button of $$('#save-manual, #close-manual, #cancel-manual')) button.disabled = busy;
+}
 async function closeManual() {
   if (saving) return;
   if (manualDirty && !await confirmAction('Discard this entry?', 'The manual reading has not been saved.', 'Discard')) return;
@@ -431,8 +435,7 @@ $('#manual-form').onsubmit = async event => {
   event.preventDefault();
   if (!manualDraft || saving || !$('#manual-form').reportValidity()) return;
   saving = true;
-  $('#manual-fields').disabled = true;
-  for (const button of $$('#save-manual, #close-manual, #cancel-manual')) button.disabled = true;
+  setManualBusy(true);
   try {
     const entry = { ...manualDraft, source: 'manual', count: null, seconds: null,
       rate: Number($('#manual-rate').value), date: manualDate($('#manual-date').value),
@@ -445,8 +448,7 @@ $('#manual-form').onsubmit = async event => {
   } catch (error) { $('#manual-error').textContent = `Could not save the reading. ${error.message}`; }
   finally {
     saving = false;
-    $('#manual-fields').disabled = false;
-    for (const button of $$('#save-manual, #close-manual, #cancel-manual')) button.disabled = false;
+    setManualBusy(false);
   }
 };
 

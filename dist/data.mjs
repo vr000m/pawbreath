@@ -67,6 +67,8 @@ export function manualDate(value, now = Date.now()) {
   requireValue(Number.isFinite(date.getTime()) && date.getFullYear() === parts[0] &&
     date.getMonth() + 1 === parts[1] && date.getDate() === parts[2] &&
     date.getHours() === parts[3] && date.getMinutes() === parts[4], 'Enter a valid local date and time.');
+  // A two-digit year typed into a datetime-local field is a first-century year, not 20xx.
+  requireValue(date.getFullYear() >= 1970, 'Check the year: the measurement date must be 1970 or later.');
   requireValue(date.getTime() <= now, 'The measurement date cannot be in the future.');
   return date.toISOString();
 }

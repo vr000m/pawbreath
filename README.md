@@ -25,7 +25,7 @@ To install on an iPhone, open the hosted HTTPS URL in Safari, choose Share, then
 - Restore validates the complete backup before beginning one transaction. It adds missing IDs and keeps existing records on conflicts. A previous backup can restore a reading deleted since that backup.
 - Backups have no fixed record-count or file-size limit. Export and restore validate the same format and record rules; available browser memory and device storage limit how large a journal can be processed.
 - Timed readings can record asleep/resting/restless context and an uncertainty flag at save time. Existing readings show context as not recorded; no state is inferred from old notes.
-- Use “Enter a previous reading” on Measure or “Enter a reading” on History to enter a rate and its original date/time in the device’s current time zone. Manual entries are labelled and retain no invented raw count or duration. Future dates are rejected.
+- Use “Enter a previous reading” on Measure or “Enter a reading” on History to enter a rate and its original date/time in the device’s current time zone. Manual entries are labelled and retain no invented raw count or duration. Future dates and years before 1970 (such as a two-digit year typed by mistake) are rejected.
 - New JSON backups use format version 2 and retain source, context and uncertainty; version 1 backups remain importable. Older app versions cannot import version 2 backups. CSV includes the new fields and leaves count/duration blank for manual entries. IndexedDB stays at schema version 1 because the existing stores need no structural migration.
 - Each measurement starts with an explicit Start action. Taps at or after the deadline do not count. Zero-breath sessions cannot be saved. Leaving the app during a count cancels that measurement.
 - Save confirms only after the database transaction commits. A failed save retains the completed reading for retry.
@@ -46,9 +46,11 @@ The version/status UI first appears after upgrading from older releases. Until t
 ## Verify
 
 ```sh
+node scripts/release.mjs --check
 node --test tests/*.test.mjs
 node --check dist/app.js
 node --check dist/data.mjs
+node --check dist/updates.mjs
 node --check dist/sw.js
 ```
 

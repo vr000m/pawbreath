@@ -51,6 +51,10 @@ test('release identity is shared by package, displayed app, published metadata a
   assert.ok(read('dist/sw.js').includes(JSON.stringify(RELEASE)));
   assert.ok(validRelease(RELEASE));
   assert.ok(!validRelease({ version: 'Sign in', build: RELEASE.build }));
+  // Coercible non-strings must not pass, and the result is a real boolean.
+  assert.equal(validRelease({ version: ['1.1.0'], build: [RELEASE.build] }), false);
+  assert.equal(validRelease(null), false);
+  assert.equal(validRelease(RELEASE), true);
 });
 
 test('release generation is deterministic and rejects stale metadata after a source edit', () => {
@@ -65,6 +69,10 @@ test('release generation is deterministic and rejects stale metadata after a sou
     const run = (...args) => spawnSync(process.execPath, [join(dir, 'scripts/release.mjs'), ...args], { encoding: 'utf8' });
     assert.equal(run().status, 0);
     const first = readFileSync(join(dir, 'dist/release.json'), 'utf8');
+    assert.equal(run('--check').status, 0);
+    // Files and directories that are never deployed must not alter or invalidate the build ID.
+    writeFileSync(join(dir, 'dist/.DS_Store'), 'finder state');
+    mkdirSync(join(dir, 'dist/empty'));
     assert.equal(run('--check').status, 0);
     assert.equal(run().status, 0);
     assert.equal(readFileSync(join(dir, 'dist/release.json'), 'utf8'), first);
@@ -156,6 +164,15 @@ test('offline and unsupported browsers distinguish version checks from offline a
   assert.equal(unsupported.state.offlineReady, false);
   assert.equal(unsupported.state.supported, false);
   assert.match(unsupported.state.message, /latest published version/);
+});
+
+test('concurrent offline launches observe a downloaded registration only once', async () => {
+  const app = setup({ connected: false });
+  let listeners = 0;
+  const add = app.registration.addEventListener.bind(app.registration);
+  app.registration.addEventListener = (...args) => { listeners++; add(...args); };
+  await Promise.all([app.monitor.check(), app.monitor.check()]);
+  assert.equal(listeners, 1);
 });
 
 test('simultaneous checks coalesce and restricted storage does not prevent checking', async () => {

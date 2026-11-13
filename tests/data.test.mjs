@@ -158,4 +158,6 @@ test('manual dates preserve the original local time and reject future or nonexis
     assert.throws(() => manualDate(invalid));
   }
   assert.throws(() => manualDate(value, new Date(2019, 0, 1).getTime()), /future/);
+  // Typing "20" into a datetime-local year field yields year 0020, which must not be saved.
+  assert.throws(() => manualDate('0020-01-15T13:45'), /1970/);
 });

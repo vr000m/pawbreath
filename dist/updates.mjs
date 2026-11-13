@@ -4,7 +4,8 @@ const CHECK_KEY = 'pawbreath-last-update-check';
 const sameRelease = (a, b) => a?.version === b?.version && a?.build === b?.build;
 
 export function validRelease(value) {
-  return value && /^\d+\.\d+\.\d+$/.test(value.version) && /^[a-f0-9]{12}$/.test(value.build);
+  return typeof value?.version === 'string' && typeof value?.build === 'string' &&
+    /^\d+\.\d+\.\d+$/.test(value.version) && /^[a-f0-9]{12}$/.test(value.build);
 }
 
 function withTimeout(promise, ms = 20000) {
@@ -77,6 +78,8 @@ export function createUpdateMonitor({
     });
   }
   function watchRegistration(value) {
+    // Concurrent offline lookups resolve to the same registration; listen to it once.
+    if (registration === value) return;
     registration = value;
     registration.addEventListener('updatefound', () => { observe(registration.installing); emit(); });
     observe(registration.installing);
