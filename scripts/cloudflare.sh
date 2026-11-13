@@ -27,8 +27,9 @@ if [[ ! -x "$wrangler" ]]; then
   exit 1
 fi
 
-if [[ "$1" == deploy ]]; then
-  # JSON mode exits non-zero when unauthenticated; human-readable mode may not.
-  "$wrangler" whoami --json > /dev/null
+# JSON mode exits non-zero when unauthenticated; human-readable mode may not.
+if [[ "$1" == whoami ]]; then
+  exec "$wrangler" whoami --json
 fi
-exec "$wrangler" "$1"
+"$wrangler" whoami --json > /dev/null
+exec "$wrangler" deploy

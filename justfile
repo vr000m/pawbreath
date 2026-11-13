@@ -5,7 +5,7 @@ export WRANGLER_LOG_PATH := ".wrangler/logs/"
 default:
     @just --list
 
-# Install the pinned deployment tools (Node.js 22+ required).
+# Install the pinned deployment tools (Node.js 22.12+ required).
 install:
     npm ci
 
