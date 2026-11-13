@@ -104,3 +104,14 @@ test('authentication pages and missing assets fail installation', async () => {
   await assert.rejects(worker(async () => new Response('<html>Sign in</html>')).lifecycle('install'));
   await assert.rejects(worker(async () => new Response('Unavailable', { status: 503 })).lifecycle('install'));
 });
+
+test('activation retires the v2 shell cache whose precache set still included index.html', async () => {
+  const instance = worker(async url => asset(url));
+  // v2 shipped with ./index.html in the precache list; the current ASSETS no longer lists it, so
+  // the current cache must have a new name or that stale entry would never be removed.
+  instance.stores.set('pawbreath-shell-v2', new Map([[scope + 'index.html', asset(scope + 'index.html')]]));
+  await instance.lifecycle('install');
+  await instance.lifecycle('activate');
+  assert.ok(!instance.stores.has('pawbreath-shell-v2'));
+  assert.equal([...instance.stores.keys()].filter(name => name.startsWith('pawbreath-shell-')).length, 1);
+});
