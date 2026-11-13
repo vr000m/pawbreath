@@ -2,6 +2,10 @@
 
 A mobile-first breathing journal for dogs. The app supports timed 30/60-second tap counting, multiple dog profiles and photos, notes, date-filtered charts, owner-entered thresholds, CSV export, and versioned JSON backups.
 
+![Pawbreath measurement screen with a sample Milo profile and latest reading](docs/images/pawbreath-preview.png)
+
+Local browser preview with sample data.
+
 ## Run locally
 
 From this directory, start a static server.
@@ -45,7 +49,7 @@ Open the printed temporary file in a browser to run it. The title and an on-page
 
 ## Current delivery state
 
-Source implementation and Node checks are complete. Live browser verification and iPhone installation remain unverified. The execution environment denied the local HTTP listener, blocked local-file browser navigation, and could not resolve the hosting Git endpoint.
+Source implementation, all 14 Node tests and the 11-check Chromium browser harness pass. The local preview also fits a 375px mobile viewport without horizontal overflow. Real-device installation, a two-version service-worker update during a count, and deployment remain unverified.
 
 A private Site was registered, with its identity saved locally in the ignored `.openai/hosting.json` file. No version was deployed. Resume publication with this existing Site identity when network access is available.
 
