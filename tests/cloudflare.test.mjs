@@ -19,6 +19,17 @@ function fixture(t) {
   // The wrapper's default credential file lives under HOME; point HOME at the fixture.
   mkdirSync(join(root, '.secrets'));
   writeFileSync(join(root, '.secrets', 'cf.env'), credentials);
+  // The deploy guard inspects git state, so the fixture is a repo with a clean, committed dist/.
+  mkdirSync(join(root, 'dist'));
+  writeFileSync(join(root, 'dist', 'index.html'), '<!doctype html>\n');
+  writeFileSync(join(root, '.gitignore'), '*.bak\n');
+  const git = (...args) => {
+    const r = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...args], { cwd: root, encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+  };
+  git('init', '-q');
+  git('add', '.gitignore', 'dist/index.html');
+  git('commit', '-q', '-m', 'fixture');
   writeFileSync(join(root, 'node_modules', '.bin', 'wrangler'), `#!/usr/bin/env node
 const fs = require('node:fs');
 const command = process.argv[2];
@@ -34,6 +45,7 @@ process.exit(command === 'whoami' ? Number(process.env.AUTH_EXIT || 0) : 0);
   return {
     envFile,
     root,
+    git,
     run(command, overrides = {}) {
       const result = spawnSync('bash', [script, command], {
         cwd: tmpdir(), encoding: 'utf8',
@@ -114,6 +126,34 @@ test('Cloudflare wrapper accepts only absolute CLOUDFLARE_ENV_FILE values', t =>
       assert.notEqual(result.status, 0, c.name);
       assert.deepEqual(result.calls, [], c.name);
       if (!overrides.CLOUDFLARE_ENV_FILE.startsWith('/')) assert.match(result.stderr, /absolute path/, c.name);
+    }
+  }
+});
+
+// Wrangler uploads every file physically present in dist/ (only .assetsignore, _headers and
+// _redirects are excluded; .gitignore is not consulted), so deploy must refuse unless dist/ is
+// exactly what git tracks. whoami never uploads and is unaffected.
+test('Cloudflare deploy refuses a dist/ that differs from git; whoami is unaffected', t => {
+  const states = [
+    { name: 'clean tracked', setup: () => {}, clean: true },
+    { name: 'untracked file', setup: f => writeFileSync(join(f.root, 'dist', 'journal-backup.json'), '{}'), clean: false },
+    { name: 'modified tracked file', setup: f => writeFileSync(join(f.root, 'dist', 'index.html'), 'changed\n'), clean: false },
+    { name: 'ignored file', setup: f => writeFileSync(join(f.root, 'dist', 'journal.bak'), '{}'), clean: false },
+  ];
+  for (const state of states) {
+    for (const mode of ['deploy', 'whoami']) {
+      const f = fixture(t);
+      state.setup(f);
+      const result = f.run(mode);
+      const label = `${state.name} / ${mode}`;
+      if (mode === 'deploy' && !state.clean) {
+        assert.notEqual(result.status, 0, label);
+        assert.deepEqual(result.calls, [], label);
+        assert.match(result.stderr, /dist\/ must match git/, label);
+      } else {
+        assert.equal(result.status, 0, `${label}: ${result.stderr}`);
+        assert.deepEqual(result.calls.map(call => call.command), mode === 'deploy' ? ['whoami', 'deploy'] : ['whoami'], label);
+      }
     }
   }
 });

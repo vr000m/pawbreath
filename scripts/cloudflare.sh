@@ -37,5 +37,19 @@ fi
 if [[ "$1" == whoami ]]; then
   exec "$wrangler" whoami --json
 fi
+
+# Wrangler uploads every file present in dist/ (it ignores only .assetsignore, _headers and
+# _redirects, never .gitignore), and the site is public. Refuse unless dist/ is exactly what git
+# tracks: no untracked, modified or ignored files such as backups or .DS_Store.
+if ! dist_dirty="$(git status --porcelain --ignored --untracked-files=all -- dist)"; then
+  echo "Could not read git status for dist/; refusing to deploy." >&2
+  exit 1
+fi
+if [[ -n "$dist_dirty" ]]; then
+  echo "dist/ must match git before deploy; Wrangler would upload these paths to the public site:" >&2
+  printf '%s\n' "$dist_dirty" >&2
+  exit 1
+fi
+
 "$wrangler" whoami --json > /dev/null
 exec "$wrangler" deploy
