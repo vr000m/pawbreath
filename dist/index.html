@@ -88,7 +88,7 @@
     <p id="manual-dog" class="muted"></p>
     <p class="small">Use a rate you recorded outside Pawbreath. This will be labelled as a manual entry.</p>
     <fieldset id="manual-fields">
-      <label for="manual-rate">Breaths per minute</label><input id="manual-rate" type="number" inputmode="decimal" min="0.1" max="20000" step="0.1" required>
+      <label for="manual-rate">Breaths per minute</label><input id="manual-rate" type="number" inputmode="decimal" min="0.1" max="300" step="0.1" required>
       <label for="manual-date">Original measurement date and time</label><input id="manual-date" type="datetime-local" step="60" required aria-describedby="manual-timezone"><p id="manual-timezone" class="small muted"></p>
       <label for="manual-context">How was your dog?</label><select id="manual-context"><option value="not-recorded">Not recorded</option><option value="asleep">Asleep</option><option value="resting">Resting</option><option value="restless">Restless</option></select><label class="checkbox-label" for="manual-uncertain"><input id="manual-uncertain" type="checkbox">I’m uncertain about this reading</label>
       <label for="manual-notes">Anything to note? <span class="muted">Optional</span></label><textarea id="manual-notes" maxlength="2000" rows="3"></textarea>

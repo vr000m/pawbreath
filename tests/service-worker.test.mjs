@@ -49,10 +49,19 @@ function worker(fetchAsset) {
   };
 }
 
+const build = source.match(/"build":"([0-9a-f]+)"/)[1];
+
 function asset(url) {
   const html = url.endsWith('/') || url.endsWith('/index.html');
+  if (url.endsWith('/version.mjs')) return new Response(`export const RELEASE = {"build":"${build}"};`);
   return new Response(html ? '<button id="breath-button">Tap</button>' : 'asset bytes');
 }
+
+test('installation rejects assets that belong to a different build', async () => {
+  const stale = worker(async url => url.endsWith('/version.mjs')
+    ? new Response('export const RELEASE = {"build":"000000000000"};') : asset(url));
+  await assert.rejects(stale.lifecycle('install'), /do not match/);
+});
 
 test('installed shell serves offline, including a queried home-screen URL', async () => {
   let offline = false;

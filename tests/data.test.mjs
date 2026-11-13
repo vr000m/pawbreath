@@ -142,7 +142,13 @@ test('manual readings round-trip with context and uncertainty without invented c
   const csv = toCsv({ dogs: [dog], readings: [manual] });
   assert.ok(csv.includes('"23.5","",""'));
   assert.ok(csv.includes('"manual","resting","Yes"'));
-  for (const patch of [{ count: 12 }, { seconds: 30 }, { rate: 0 }, { rate: Infinity }, { rate: 23.55 },
+  assert.equal(validateReading({ ...manual, rate: 300 }).rate, 300);
+  const legacy = { id: 'legacy-1', dogId: dog.id, date: reading.date, count: 12, seconds: 30, rate: 24, notes: '' };
+  const lenient = toCsv({ dogs: [dog], readings: [reading, { ...manual, id: 'bad-1', rate: 2400 }, legacy] }).split('\r\n');
+  assert.equal(lenient.length, 4, 'one invalid record must not abort or drop other rows');
+  assert.ok(lenient.some(row => row.includes('"2400"')));
+  assert.ok(lenient.some(row => row.includes('"timed","not-recorded","No"')));
+  for (const patch of [{ rate: 301 }, { rate: 2400 }, { count: 12 }, { seconds: 30 }, { rate: 0 }, { rate: Infinity }, { rate: 23.55 },
     { source: 'imported' }, { context: 'sleepy' }, { context: null }, { uncertain: 'yes' }]) {
     assert.throws(() => validateReading({ ...manual, ...patch }));
   }

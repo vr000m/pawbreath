@@ -48,9 +48,9 @@ export function validateReading(reading) {
   } else {
     requireValue(reading.count === null && reading.seconds === null,
       'Manual readings must not invent a breath count or measurement duration.');
-    requireValue(Number.isFinite(reading.rate) && reading.rate > 0 && reading.rate <= 20000 &&
+    requireValue(Number.isFinite(reading.rate) && reading.rate > 0 && reading.rate <= 300 &&
       Math.round(reading.rate * 10) / 10 === reading.rate,
-      'Enter a positive breathing rate with at most one decimal place (maximum 20,000).');
+      'Enter a positive breathing rate with at most one decimal place (maximum 300).');
   }
   requireValue(typeof reading.notes === 'string' && reading.notes.length <= 2000, 'Notes must contain at most 2,000 characters.');
   return { id: reading.id, dogId: reading.dogId, date: reading.date, count: reading.count,
@@ -105,9 +105,15 @@ export function toCsv(snapshot) {
   const names = new Map(snapshot.dogs.map(dog => [dog.id, dog.name]));
   const rows = [['Dog', 'Timestamp (UTC)', 'Breaths per minute', 'Breaths counted', 'Seconds', 'Notes', 'Source', 'Context', 'Uncertain']];
   for (const reading of [...snapshot.readings].sort((a, b) => a.date.localeCompare(b.date))) {
-    const entry = validateReading(reading);
-    rows.push([names.get(entry.dogId) ?? '', entry.date, entry.rate, entry.count ?? '', entry.seconds ?? '',
-      entry.notes, entry.source, entry.context, entry.uncertain ? 'Yes' : 'No']);
+    // Export is a data-rescue path: normalise a valid record, otherwise write what is stored
+    // rather than aborting and withholding every other reading.
+    let entry;
+    try { entry = validateReading(reading); } catch {
+      entry = { ...reading, source: reading.source ?? 'timed', context: reading.context ?? 'not-recorded',
+        uncertain: reading.uncertain ?? false, notes: reading.notes ?? '' };
+    }
+    rows.push([names.get(entry.dogId) ?? '', entry.date ?? '', entry.rate ?? '', entry.count ?? '', entry.seconds ?? '',
+      entry.notes, entry.source, entry.context, entry.uncertain === true ? 'Yes' : 'No']);
   }
   return '\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n');
 }

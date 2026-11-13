@@ -429,7 +429,10 @@ $('#cancel-manual').onclick = closeManual;
 $('#manual-form').addEventListener('input', () => { manualDirty = true; });
 $('#manual-dialog').addEventListener('cancel', event => { event.preventDefault(); closeManual(); });
 $('#manual-dialog').addEventListener('close', () => {
-  if (!$('#manual-dialog').open) { manualDraft = null; manualDirty = false; }
+  // Browsers let a page cancel Escape only once per user activation, so a dirty dialog can still
+  // close without Save or Discard. Never lose the draft silently: reopen it, fields intact.
+  if (manualDirty) { $('#manual-dialog').showModal(); return; }
+  manualDraft = null;
 });
 $('#manual-form').onsubmit = async event => {
   event.preventDefault();
@@ -442,6 +445,8 @@ $('#manual-form').onsubmit = async event => {
       context: $('#manual-context').value, uncertain: $('#manual-uncertain').checked, notes: $('#manual-notes').value.trim() };
     await saveReading(db, entry);
     finishManual();
+    // An entry older than the active period would be saved but invisible; show it.
+    if (range !== 'all' && Date.parse(entry.date) < Date.now() - Number(range) * 86400000) setRange('all');
     await refreshAfterWrite();
     notifyChange();
     toast('Manual reading saved to your journal.');
@@ -473,11 +478,11 @@ function showPage(next) {
 $$('[data-page]').forEach(button => { button.onclick = () => showPage(button.dataset.page); });
 $('.brand').onclick = event => { event.preventDefault(); showPage('measure'); };
 $('#selected-dog').onchange = () => { selectedId = $('#selected-dog').value; renderProfiles(); renderLatest(); resetCounter(); };
-for (const button of $$('[data-range]')) button.onclick = () => {
-  range = button.dataset.range;
-  $$('[data-range]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
-  renderHistory();
-};
+function setRange(value) {
+  range = value;
+  $$('[data-range]').forEach(item => item.setAttribute('aria-pressed', String(item.dataset.range === value)));
+}
+for (const button of $$('[data-range]')) button.onclick = () => { setRange(button.dataset.range); renderHistory(); };
 window.addEventListener('resize', () => { if (page === 'history') drawChart(); });
 
 function previewPhoto() {
@@ -646,5 +651,5 @@ try {
   for (const button of $$('#add-dog, #settings-add-dog, #backup, #restore, #csv-export')) button.disabled = true;
   showError(new Error(`Your journal could not open. ${error.message} Check browser storage permissions and reload.`));
   $('#counter-status').textContent = 'Storage must be available before recording a reading.';
-  connectionStatus();
+  connectionStatus(updates.getState().offlineReady);
 }
