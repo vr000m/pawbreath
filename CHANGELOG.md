@@ -1,0 +1,28 @@
+# Changelog
+
+User-visible changes are recorded here. Unreleased changes have not been deployed.
+
+## Unreleased
+
+### Added
+
+- Manual readings with the original measurement time, context, uncertainty and notes; no invented count or duration.
+- Context and uncertainty labels for timed readings, with matching History chart/list filters.
+- Sourced breathing guidance available offline. Its general reference never supplies the optional vet threshold.
+- Settings version/build display, update checks and instructions for safely reopening a downloaded update.
+
+### Changed
+
+- JSON backup format 2 retains source, context and uncertainty; format 1 remains importable. Older app versions cannot import format 2. The device database schema remains unchanged.
+- CSV includes the new fields, leaves manual count/duration blank, and exports all records regardless of History filters.
+
+### Fixed
+
+- Saving an older or differently labelled reading clears filters that would hide it.
+- Manual entry rejects future dates, years before 1970 and rates above 300 breaths/min. Failed saves and repeated Escape preserve dirty manual drafts until saved or discarded.
+- Update checks retain counts and unsaved work while downloaded workers wait for all app windows to close.
+- Release checks reject stale generated metadata; worker installation rejects a mismatched version module. Build hashing handles nested files and ignores dotfiles.
+
+## Earlier baseline
+
+The previously deployed app provides dog profiles/photos, 30/60-second timed counts, history, owner-entered thresholds, CSV export, JSON backup/restore and an offline shell. Hosting uses Cloudflare Workers with HTTPS/apex redirects.
