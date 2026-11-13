@@ -86,6 +86,20 @@ test('activation removes obsolete app caches and preserves unrelated caches', as
   assert.ok(instance.claimed);
 });
 
+test('installation succeeds on hosts that redirect index.html to the scope root', async () => {
+  const requested = [];
+  const instance = worker(async url => {
+    requested.push(url);
+    const response = asset(url);
+    if (url.endsWith('/index.html')) Object.defineProperty(response, 'redirected', { value: true });
+    return response;
+  });
+  await instance.lifecycle('install');
+  assert.ok(!requested.some(url => url.endsWith('/index.html')));
+  const response = await instance.request(scope);
+  assert.ok((await response.text()).includes('breath-button'));
+});
+
 test('authentication pages and missing assets fail installation', async () => {
   await assert.rejects(worker(async () => new Response('<html>Sign in</html>')).lifecycle('install'));
   await assert.rejects(worker(async () => new Response('Unavailable', { status: 503 })).lifecycle('install'));
