@@ -109,15 +109,22 @@ export function createUpdateMonitor({
       const published = await getRelease();
       if (!validRelease(published)) throw new Error('Invalid release.');
       latest = published;
+      // A first installation may have claimed this page before the published release was known.
+      if (claimedWhileUnknown && !sameRelease(latest, RELEASE)) activationChanged = true;
+      claimedWhileUnknown = false;
       checked = now();
       try { storage?.setItem(CHECK_KEY, checked); } catch { /* Optional metadata only. */ }
     } catch { error = true; }
     finally { checking = false; emit(); }
   }
   let hadController = !!serviceWorker?.controller;
+  let claimedWhileUnknown = false;
   serviceWorker?.addEventListener('controllerchange', () => {
-    // First installation claims the current page too; that alone is not an update.
-    if (hadController || (latest && !sameRelease(latest, RELEASE))) activationChanged = true;
+    // First installation claims the current page too; that alone is not an update. If the published
+    // release is not known yet, remember the claim so check() can apply the same rule once it is.
+    if (hadController) activationChanged = true;
+    else if (!latest) claimedWhileUnknown = true;
+    else if (!sameRelease(latest, RELEASE)) activationChanged = true;
     hadController = true;
     emit();
   });

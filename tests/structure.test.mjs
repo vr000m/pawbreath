@@ -4,6 +4,7 @@ import { readFileSync, mkdtempSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { parseAssets } from '../scripts/lib/precache-assets.mjs';
 
 const dist = new URL('../dist/', import.meta.url);
 const read = name => readFileSync(new URL(name, dist), 'utf8');
@@ -21,7 +22,7 @@ test('every name a module imports is exported by the imported module', async () 
 
 test('the precache list contains every module, stylesheet, manifest and icon the shell loads', () => {
   const worker = read('sw.js');
-  const assets = [...worker.match(/^const ASSETS = \[([^\]]*)\];$/m)[1].matchAll(/'([^']*)'/g)].map(match => match[1]);
+  const assets = parseAssets(worker);
   const html = read('index.html');
   const needed = new Set(['./']);
   for (const [, path] of html.matchAll(/<(?:script|link)\b[^>]*(?:src|href)="(\.\/[^"#]+)"/g)) needed.add(path);

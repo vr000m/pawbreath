@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { parseAssets } from '../scripts/lib/precache-assets.mjs';
 
 const dist = new URL('../dist/', import.meta.url);
 const source = readFileSync(new URL('sw.js', dist), 'utf8');
@@ -53,7 +54,7 @@ function worker(fetchAsset) {
 }
 
 const build = source.match(/"build":"([0-9a-f]+)"/)[1];
-const precached = [...source.match(/^const ASSETS = \[([^\]]*)\];$/m)[1].matchAll(/'([^']*)'/g)].map(match => match[1]);
+const precached = parseAssets(source);
 const fileFor = path => path === './' ? 'index.html' : path.slice(2);
 const deployed = url => readFileSync(new URL(url.endsWith('/') ? 'index.html' : url.slice(scope.length), dist));
 

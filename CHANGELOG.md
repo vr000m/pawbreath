@@ -21,7 +21,7 @@ User-visible changes are recorded here. Unreleased changes have not been deploye
 - Saving an older or differently labelled reading clears filters that would hide it.
 - Manual entry rejects future dates, years before 1970 and rates above 300 breaths/min. Failed saves and repeated Escape preserve dirty manual drafts until saved or discarded.
 - Update checks retain counts and unsaved work while downloaded workers wait for all app windows to close.
-- Release checks reject stale generated metadata; worker installation rejects a mismatched version module. Build hashing handles nested files and ignores dotfiles.
+- Release checks reject stale generated metadata; worker installation checks the build ID in `version.mjs` and verifies every precached shell file against the SHA-256 `DIGESTS` manifest generated into `sw.js`; any mismatch aborts installation and caches nothing. Build hashing handles nested files and ignores dotfiles.
 
 ## Earlier baseline
 
