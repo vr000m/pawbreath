@@ -10,6 +10,7 @@ let selectedId = '';
 let page = 'measure';
 let duration = 30;
 let range = '30';
+let historyContext = 'all';
 let session = null;
 let pending = null;
 let manualDraft = null;
@@ -91,7 +92,7 @@ function renderProfiles() {
   const current = dog();
   $('#dog-name').textContent = current?.name ?? 'Every breath matters.';
   $('#dog-caption').textContent = current
-    ? (current.threshold ? `Your threshold · ${current.threshold} breaths/min` : 'A moment of care, one reading at a time.')
+    ? (current.threshold ? `Threshold you entered · ${current.threshold} breaths/min` : 'No vet threshold entered.')
     : 'Add a profile to start their journal.';
   const avatar = $('#dog-avatar');
   avatar.replaceChildren();
@@ -145,17 +146,19 @@ function renderLatest() {
 
 function filteredReadings() {
   const cutoff = range === 'all' ? 0 : Date.now() - Number(range) * 86400000;
-  return readings().filter(item => Date.parse(item.date) >= cutoff);
+  return readings().filter(item => Date.parse(item.date) >= cutoff &&
+    (historyContext === 'all' || (item.context ?? 'not-recorded') === historyContext));
 }
 
 function renderHistory() {
-  $('#history-dog').textContent = dog() ? `${dog().name}'s resting breathing journal.` : 'Add a dog and save your first reading.';
+  $('#history-dog').textContent = dog() ? `${dog().name}'s breathing journal.` : 'Add a dog and save your first reading.';
   const entries = filteredReadings();
   $('#reading-total').textContent = `${entries.length} ${entries.length === 1 ? 'reading' : 'readings'}`;
   $('#chart-empty').hidden = entries.length > 0;
   $('#history-chart').hidden = entries.length === 0;
+  $('#chart-empty').textContent = 'No readings match this period and context. Try another filter or add a reading.';
   $('#chart-summary').textContent = entries.length
-    ? `${Math.min(...entries.map(item => item.rate))}–${Math.max(...entries.map(item => item.rate))} breaths/min in this period${dog()?.threshold ? ` · Dashed line marks your threshold of ${dog().threshold}` : ''}`
+    ? `${Math.min(...entries.map(item => item.rate))}–${Math.max(...entries.map(item => item.rate))} breaths/min for the selected readings${dog()?.threshold ? ` · Dashed line marks the threshold you entered: ${dog().threshold}` : ''}`
     : 'Your observations will build a picture over time.';
   const list = $('#reading-list');
   list.replaceChildren();
@@ -306,7 +309,7 @@ function completeCount() {
   $('#result').hidden = false;
   $('#result-rate').textContent = `${pending.rate} breaths per minute`;
   const exceeds = dog()?.threshold && pending.rate >= dog().threshold;
-  $('#result-threshold').textContent = exceeds ? `At or above your threshold of ${dog().threshold}. Follow the guidance your vet gave you.` : 'Review your count, add any notes, and save this moment.';
+  $('#result-threshold').textContent = exceeds ? `At or above the threshold you entered: ${dog().threshold} breaths/min. Follow the guidance your vet gave you.` : 'Review your count, add any notes, and save this moment.';
   $('#result-threshold').className = exceeds ? 'threshold-note' : 'muted';
   $('#counter-status').textContent = 'Reading ready to save.';
   $('#counter-instruction').textContent = `${finished.count} breaths counted in ${finished.seconds} seconds.`;
@@ -380,6 +383,7 @@ $('#save-reading').onclick = async () => {
   pending.uncertain = $('#reading-uncertain').checked;
   try {
     await saveReading(db, pending);
+    revealSavedReading(pending);
     pending = null;
     resetCounter();
     await refreshAfterWrite();
@@ -445,8 +449,7 @@ $('#manual-form').onsubmit = async event => {
       context: $('#manual-context').value, uncertain: $('#manual-uncertain').checked, notes: $('#manual-notes').value.trim() };
     await saveReading(db, entry);
     finishManual();
-    // An entry older than the active period would be saved but invisible; show it.
-    if (range !== 'all' && Date.parse(entry.date) < Date.now() - Number(range) * 86400000) setRange('all');
+    revealSavedReading(entry);
     await refreshAfterWrite();
     notifyChange();
     toast('Manual reading saved to your journal.');
@@ -483,6 +486,16 @@ function setRange(value) {
   $$('[data-range]').forEach(item => item.setAttribute('aria-pressed', String(item.dataset.range === value)));
 }
 for (const button of $$('[data-range]')) button.onclick = () => { setRange(button.dataset.range); renderHistory(); };
+function setHistoryContext(value) {
+  historyContext = value;
+  $('#history-context').value = value;
+}
+function revealSavedReading(entry) {
+  // A newly saved reading must not appear to be lost behind an earlier filter.
+  if (range !== 'all' && Date.parse(entry.date) < Date.now() - Number(range) * 86400000) setRange('all');
+  if (historyContext !== 'all' && historyContext !== entry.context) setHistoryContext('all');
+}
+$('#history-context').onchange = () => { setHistoryContext($('#history-context').value); renderHistory(); };
 window.addEventListener('resize', () => { if (page === 'history') drawChart(); });
 
 function previewPhoto() {

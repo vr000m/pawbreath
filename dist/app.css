@@ -1060,3 +1060,10 @@ dialog label {
 #manual-entry { display:block; margin:0 auto; }
 .update-notice { padding:16px; border:1px solid currentColor; border-radius:12px; margin-bottom:24px; }
 #app-version, #published-version { overflow-wrap:anywhere; }
+.breathing-guide { border:1px solid #dce3d6; border-radius:16px; padding:18px; background:#fffefa; }
+.breathing-guide summary { cursor:pointer; font-weight:600; min-height:44px; display:list-item; align-content:center; }
+.breathing-guide p { font-size:14px; line-height:1.6; margin:14px 0 0; }
+.breathing-guide a { color:inherit; text-decoration:underline; text-underline-offset:3px; }
+.history-context-filter { margin:16px 0; }
+.history-context-filter select { width:100%; max-width:380px; }
+.history-context-filter p { max-width:65ch; }

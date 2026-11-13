@@ -168,7 +168,9 @@ await check('Checking and downloading updates preserves active counts, results a
   $('#reading-notes').value = 'Keep this unsaved note';
   await updates.check();
   assert(pending === completed && $('#reading-notes').value === 'Keep this unsaved note', 'Update lost result');
+  setHistoryContext('asleep');
   await $('#save-reading').onclick();
+  assert(historyContext === 'all', 'Saved timed entry remained hidden by the context filter');
   $('#manual-entry').click();
   $('#manual-rate').value = '25';
   $('#manual-rate').dispatchEvent(new Event('input', {bubbles:true}));
@@ -178,6 +180,70 @@ await check('Checking and downloading updates preserves active counts, results a
   finishManual();
   harnessRegistration.waiting = null;
   updates.refresh();
+});
+await check('General breathing guidance never supplies a threshold or reassures below one', async () => {
+  for (const threshold of ['', '35']) {
+    openDog(profile.id);
+    $('#threshold-input').value = threshold;
+    await $('#dog-form').onsubmit({preventDefault(){}});
+    assert(dog().threshold === (threshold ? 35 : null), 'General guidance changed the stored threshold');
+    $('#start').click();
+    for (let i = 0; i < duration * 40 / 60; i++) $('#breath-button').click();
+    fakeNow += duration * 1000;
+    tick();
+    assert(pending.rate === 40, 'Test count did not finish');
+    if (threshold) assert($('#result-threshold').textContent.includes('threshold you entered: 35'), 'Personal threshold missing');
+    else {
+      assert(!$('#result-threshold').classList.contains('threshold-note'), 'General 30 reference applied as a personal threshold');
+      assert(!/normal|safe|healthy/i.test($('#result-threshold').textContent), 'Result made a medical reassurance');
+    }
+    const discard = $('#discard').onclick();
+    $('#confirm-yes').click();
+    await discard;
+  }
+  openDog(profile.id);
+  $('#threshold-input').value = '30';
+  await $('#dog-form').onsubmit({preventDefault(){}});
+});
+await check('History context filters chart and list, preserves unknown context and never filters exports', async () => {
+  const original = selectedId;
+  const filterDog = {id:'filter-dog',name:'Filter check',threshold:null,photo:''};
+  await saveDog(db, filterDog);
+  const fixtures = [
+    {...record,id:'filter-asleep',dogId:filterDog.id,context:'asleep',uncertain:true},
+    {...record,id:'filter-resting',dogId:filterDog.id,context:'resting'},
+    {...record,id:'filter-legacy',dogId:filterDog.id},
+    {...record,id:'filter-old',dogId:filterDog.id,context:'asleep',date:'2020-01-01T12:00:00.000Z'},
+  ];
+  for (const entry of fixtures) await saveReading(db, {...entry, notes:entry.id});
+  selectedId = filterDog.id;
+  await refresh();
+  showPage('history');
+  setRange('30');
+  const choose = context => { $('#history-context').value = context; $('#history-context').onchange(); };
+  choose('asleep');
+  assert(filteredReadings().length === 1 && filteredReadings()[0].id === 'filter-asleep', 'Sleeping filter mixed contexts or dates');
+  assert($('#reading-list').children.length === 1 && $('#reading-list').textContent.includes('Uncertain'), 'Uncertain sleeping reading was hidden');
+  assert(!$('#history-chart').hidden, 'Filtered chart was hidden');
+  choose('not-recorded');
+  assert(filteredReadings().length === 1 && filteredReadings()[0].id === 'filter-legacy', 'Legacy reading context was inferred');
+  choose('restless');
+  assert($('#history-chart').hidden && !$('#chart-empty').hidden, 'Empty filtered chart not handled');
+  const csv = toCsv(snapshot);
+  for (const entry of fixtures) assert(csv.includes(entry.id), 'Context filter affected exported data');
+  choose('asleep');
+  $('#history-manual-entry').click();
+  $('#manual-rate').value = '22';
+  $('#manual-date').value = '2020-01-15T13:45';
+  $('#manual-context').value = 'resting';
+  await $('#manual-form').onsubmit({preventDefault(){}});
+  assert(range === 'all' && historyContext === 'all', 'Saved manual entry remained hidden by filters');
+  assert($('#reading-list').textContent.includes('Manual entry · Resting'), 'Saved manual entry is not visible');
+  selectedId = original;
+  setRange('all');
+  setHistoryContext('all');
+  await refresh();
+  showPage('measure');
 });
 await check('Concurrent connections preserve distinct records', async () => {
   const second = await openDatabase();
