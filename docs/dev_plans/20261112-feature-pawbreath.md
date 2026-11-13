@@ -16,7 +16,7 @@ A static HTML/CSS/JavaScript app with device-local IndexedDB storage. No third-p
 | `dist/index.html`, `app.css`, `app.js` | Profiles/photos, counter, manual-entry forms, guidance, History and Settings |
 | `dist/data.mjs` | Validation, transactional storage, CSV and JSON backup/restore, `CONTEXT_LABELS`, `withReadingDefaults` and `manualDialogAction` |
 | `dist/updates.mjs`, `sw.js` | Update status and scoped offline shell; no journal writes |
-| `scripts/release.mjs`, `dist/version.mjs`, `dist/release.json` | Deterministic app release/build identity; published metadata is network-only |
+| `scripts/release.mjs`, `scripts/lib/precache-assets.mjs`, `dist/version.mjs`, `dist/release.json` | Deterministic app release/build identity; published metadata is network-only |
 | `dist/manifest.webmanifest`, icons | Home-screen installation |
 | `wrangler.jsonc`, `dist/_headers`, `scripts/cloudflare.sh`, `justfile` | Hosting, security headers, external credentials and deployment checks |
 | `tests/` | Data/worker/update/deployment tests, `manual-dialog.test.mjs`, `structure.test.mjs` and browser harness |
@@ -49,10 +49,10 @@ flowchart LR
 
 ## Verification and acceptance
 
-Verified 13 November 2026 for release 1.1.0, build `626b28085c87`:
+Verified 13 November 2026 for release 1.1.0, build `e4a5be5476bf`:
 
-- [x] `npm test`: 53 Node tests, release metadata and syntax checks pass; `just deploy-check` completes the Wrangler dry run.
-- [x] Browser harness: 16 checks cover real IndexedDB writes, failures/rollback, concurrent connections, repeated restore, hostile text, timer boundaries, manual entry, threshold independence, context filters and save visibility. Its worker registration is simulated.
+- [x] `npm test`: 55 Node tests, release metadata and syntax checks pass; `just deploy-check` completes the Wrangler dry run.
+- [x] Browser harness: 17 checks (all pass in headless Chromium) cover real IndexedDB writes, failures/rollback, concurrent connections, repeated restore, hostile text, timer boundaries, manual entry, threshold independence, context filters and save visibility. Its worker registration is simulated.
 - [x] Recorded 375px layout checks show no horizontal overflow; manual Save/Cancel controls remain reachable.
 - [x] Separate real localhost Chromium upgrade from `b54a8e48353a` to `a3f2bc133df7`: the worker waited through an active count, pending result notes, dirty manual form and profile edits. Closing one of two clients retained the remaining draft and kept the update waiting. After saving and closing all clients naturally, the new build reopened offline with identical journal data.
 - [x] After that upgrade, offline guidance, actual chart/list filtering, complete CSV/JSON downloads and timed/manual save visibility passed. Tested assets matched `dist/` byte for byte; no forced activation was used.

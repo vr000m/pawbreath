@@ -14,7 +14,12 @@ function setup({ connected = true, persisted = null, unsupported = false, contro
   registration.active = {};
   registration.waiting = null;
   registration.installing = null;
-  registration.update = async () => {};
+  // Per the service worker spec, update() rejects when the registration has no worker at all.
+  registration.update = async () => {
+    if (!registration.installing && !registration.waiting && !registration.active) {
+      throw new DOMException('No worker', 'InvalidStateError');
+    }
+  };
   const serviceWorker = new EventTarget();
   serviceWorker.controller = controlled ? {} : null;
   let registrations = 0;
@@ -253,4 +258,52 @@ test('simultaneous checks coalesce and restricted storage does not prevent check
   await check;
   assert.equal(monitor.getState().checking, false);
   assert.match(monitor.getState().message, /latest published version/);
+});
+
+test('a failed first installation is retried by registering again, not by update()', async () => {
+  const app = setup({ controlled: false });
+  app.registration.active = null;
+  let updates = 0;
+  const update = app.registration.update;
+  app.registration.update = () => { updates++; return update(); };
+  let listeners = 0;
+  const add = app.registration.addEventListener.bind(app.registration);
+  app.registration.addEventListener = (...args) => { if (args[0] === 'updatefound') listeners++; add(...args); };
+  await app.monitor.check();
+  assert.equal(app.registrations, 1);
+  // The first install then fails (stale deploy, digest mismatch): the registration has no workers left.
+  const failed = new EventTarget();
+  app.registration.installing = failed;
+  app.registration.dispatchEvent(new Event('updatefound'));
+  app.registration.installing = null;
+  failed.state = 'redundant';
+  failed.dispatchEvent(new Event('statechange'));
+  assert.match(app.state.message, /Could not complete/);
+  assert.equal(app.state.offlineReady, false);
+  const fetches = app.fetches;
+  await app.monitor.check();
+  assert.equal(app.registrations, 2, 'must register again');
+  assert.equal(updates, 0, 'update() would reject on a registration with no worker');
+  assert.equal(app.fetches, fetches + 1, 'release metadata is still checked');
+  assert.equal(listeners, 1, 'same registration object is observed once');
+  assert.match(app.state.message, /latest published version/);
+  // The retried installation succeeds and reports normally.
+  app.registration.active = {};
+  app.serviceWorker.dispatchEvent(new Event('controllerchange'));
+  app.monitor.refresh();
+  assert.equal(app.state.offlineReady, true);
+});
+
+test('registrations that hold an active or waiting worker are still refreshed with update()', async () => {
+  for (const held of ['active', 'waiting']) {
+    const app = setup();
+    app.registration.active = held === 'active' ? {} : null;
+    app.registration.waiting = held === 'waiting' ? {} : null;
+    let updates = 0;
+    app.registration.update = async () => { updates++; };
+    await app.monitor.check();
+    await app.monitor.check();
+    assert.equal(app.registrations, 1, held);
+    assert.equal(updates, 1, held);
+  }
 });

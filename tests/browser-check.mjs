@@ -148,14 +148,19 @@ await check('Repeated Escape on a dirty manual draft keeps one modal on top and 
   // A non-cancelable cancel (Escape without fresh user activation) is followed by the browser closing the dialog.
   $('#manual-dialog').dispatchEvent(new Event('cancel', {cancelable:false}));
   assert(!$('#confirm-dialog').open, 'Non-cancelable Escape opened a confirm that would sit below the reopened draft');
+  // The dialog's close event is queued as a task, so wait for it (and the app's listener, registered
+  // earlier, which reopens the draft) instead of guessing with a timer.
+  const closed = new Promise(resolve => $('#manual-dialog').addEventListener('close', () => setTimeout(resolve, 0), { once: true }));
   $('#manual-dialog').close();
-  await sleep(0);
+  await closed;
   assert($('#manual-dialog').open && manualDraft === draft && $('#manual-rate').value === '26', 'Draft lost after forced close');
   $('#manual-dialog').dispatchEvent(new Event('cancel', {cancelable:true}));
   assert($('#confirm-dialog').open && $('#manual-dialog').open, 'Cancelable Escape did not ask to discard');
   $('#confirm-yes').click();
-  await sleep(0);
-  assert(!$('#manual-dialog').open && !$('#confirm-dialog').open && !manualDraft, 'Discard unreachable');
+  // confirmAction resolves from the confirm dialog's queued close event, so poll for the settled state.
+  for (let tries = 0; tries < 100 && $('#manual-dialog').open; tries++) await sleep(5);
+  assert(!$('#manual-dialog').open && !$('#confirm-dialog').open && !manualDraft,
+    'Discard unreachable (manual open=' + $('#manual-dialog').open + ', confirm open=' + $('#confirm-dialog').open + ', draft=' + !!manualDraft + ')');
 });
 await check('Manual form rejects a future date and is unavailable during a count', async () => {
   $('#manual-entry').click();

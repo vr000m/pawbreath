@@ -102,7 +102,9 @@ export function createUpdateMonitor({
     emit();
     try {
       if (serviceWorker) {
-        if (!registration) {
+        // update() rejects with InvalidStateError on a registration with no worker at all, which is what
+        // a failed first installation leaves behind. Register again so the retry can still succeed.
+        if (!registration || !(registration.installing || registration.waiting || registration.active)) {
           watchRegistration(await withTimeout(serviceWorker.register('./sw.js', { updateViaCache: 'none' })));
         } else await withTimeout(registration.update());
       }
