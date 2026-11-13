@@ -19,6 +19,7 @@ To install on an iPhone, open the hosted HTTPS URL in Safari, choose Share, then
 - Each device/browser keeps its own IndexedDB journal. Data does not synchronize across people or devices.
 - Download JSON backups from Settings to protect readings against device loss or clearing browser data. CSV exports include all dogs and use UTC timestamps.
 - Restore validates the complete backup before beginning one transaction. It adds missing IDs and keeps existing records on conflicts. A previous backup can restore a reading deleted since that backup.
+- Backups have no fixed record-count or file-size limit. Export and restore validate the same format and record rules; available browser memory and device storage limit how large a journal can be processed.
 - Each measurement starts with an explicit Start action. Taps at or after the deadline do not count. Zero-breath sessions cannot be saved. Leaving the app during a count cancels that measurement.
 - Save confirms only after the database transaction commits. A failed save retains the completed reading for retry.
 - Thresholds start empty. Enter the value your vet recommends. The app displays a comparison at or above that value.

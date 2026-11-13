@@ -1,5 +1,5 @@
 // Bump the cache version whenever an app-shell asset changes.
-const CACHE = 'pawbreath-shell-v1';
+const CACHE = 'pawbreath-shell-v2';
 const ASSETS = ['./', './index.html', './app.css', './app.js', './data.mjs',
   './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 const urls = ASSETS.map(path => new URL(path, self.registration.scope).href);

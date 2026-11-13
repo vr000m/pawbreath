@@ -1,5 +1,5 @@
 import { openDatabase, readAll, saveDog, saveReading, deleteReading, restoreBackup,
-  validateBackup, makeBackup, toCsv, respiratoryRate } from './data.mjs';
+  readBackupFile, makeBackup, toCsv, respiratoryRate } from './data.mjs';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -512,8 +512,7 @@ $('#restore-file').onchange = async () => {
   if (!file) return;
   $('#restore').disabled = true;
   try {
-    if (file.size > 20000000) throw new Error('Choose a backup smaller than 20 MB.');
-    const backup = validateBackup(JSON.parse(await file.text()));
+    const backup = await readBackupFile(file);
     if (!await confirmAction('Restore this backup?', `Add missing records from ${backup.dogs.length} dogs and ${backup.readings.length} readings? Existing records with matching IDs stay as they are.`, 'Restore')) return;
     const result = await restoreBackup(db, backup);
     await refreshAfterWrite(); notifyChange();

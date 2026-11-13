@@ -114,3 +114,10 @@ Working source is in www/pawbreath/dist with no runtime dependencies. Default na
 
 ## 2026-11-12 repository move
 The app moved from `tinkerbox/www/pawbreath` into the standalone repository <https://github.com/vr000m/pawbreath>. Paths above describe the original implementation location; current paths are relative to this repository root, with the app in `dist/`. Initial import uses `feature/initial-import`. The root `.gitignore` excludes local hosting configuration, credentials, editor state and verification output while retaining app source. Hosting identity is preserved locally in the ignored `.openai/hosting.json` file. Browser, device and deployment verification remain pending.
+
+## 2026-11-12 backup round-trip correction
+Review found that additive restores can exceed the backup validator's aggregate record limits, and exports can exceed the file reader's 20 MB limit. These limits invalidate the data-portability requirement above: every valid stored journal must remain exportable and readable by restore, within browser memory and storage capacity.
+
+Remove aggregate count and file-size limits while retaining format, per-record, uniqueness and reference validation. Route file parsing through a shared validated reader in `dist/data.mjs`, used by the restore handler in `dist/app.js`. Cover journals above 100 dogs and 50,000 readings, additive backup combinations, files above 20 MB and invalid file contents in Node regressions. Increment the service-worker cache version for changed shell assets and document the browser resource boundary in README.md. This corrects backup handling only; the outstanding browser/device/deployment checks remain pending.
+
+Implemented and verified: all 14 Node tests pass, including the new aggregate and file-size regressions; the 11-check browser harness also passes in Chromium. Export, file reading and transactional restore all use `validateBackup`. The service-worker shell cache is now v2. Real-device installation and a two-version worker update remain unverified.

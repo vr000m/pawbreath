@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { validateDog, validateReading, validateBackup, makeBackup, toCsv, respiratoryRate } from '../dist/data.mjs';
+import { validateDog, validateReading, validateBackup, makeBackup, readBackupFile, toCsv, respiratoryRate } from '../dist/data.mjs';
 
 const dog = { id: 'dog-1', name: 'Milo', threshold: null, photo: '' };
 const reading = { id: 'reading-1', dogId: dog.id, date: '2026-11-12T21:00:00.000Z', count: 12, seconds: 30, rate: 24, notes: '' };
@@ -20,6 +20,51 @@ test('backup round-trip preserves Unicode, multiline notes, and literal markup',
   const exported = makeBackup(input);
   assert.deepEqual(validateBackup(JSON.parse(JSON.stringify(exported))), input);
   assert.ok(exported.exportedAt);
+});
+
+test('combined valid backups remain exportable beyond the former aggregate limits', () => {
+  const first = validateBackup({
+    format: 'pawbreath', version: 1,
+    dogs: Array.from({ length: 100 }, (_, i) => ({ ...dog, id: `dog-${i}` })),
+    readings: Array.from({ length: 50000 }, (_, i) => ({ ...reading, id: `reading-${i}` })),
+  });
+  const second = validateBackup({
+    format: 'pawbreath', version: 1,
+    dogs: [{ ...dog, id: 'extra-dog' }],
+    readings: [{ ...reading, id: 'extra-reading', dogId: 'extra-dog' }],
+  });
+  const combined = { dogs: [...first.dogs, ...second.dogs], readings: [...first.readings, ...second.readings] };
+  const exported = makeBackup(combined);
+  const restored = validateBackup(JSON.parse(JSON.stringify(exported)));
+  assert.deepEqual(restored.dogs, combined.dogs);
+  assert.deepEqual(restored.readings, combined.readings);
+
+  const invalid = structuredClone(exported);
+  invalid.readings.at(-1).dogId = 'missing';
+  assert.throws(() => validateBackup(invalid), /missing its dog profile/);
+  invalid.readings.at(-1).dogId = 'extra-dog';
+  invalid.readings.at(-1).id = invalid.readings[0].id;
+  assert.throws(() => validateBackup(invalid), /duplicate reading IDs/);
+});
+
+test('exported files above 20 MB remain readable by the restore file reader', async () => {
+  const input = {
+    dogs: [dog],
+    readings: Array.from({ length: 10000 }, (_, i) => ({ ...reading, id: `reading-${i}`, notes: 'x'.repeat(2000) })),
+  };
+  const file = new Blob([JSON.stringify(makeBackup(input), null, 2)], { type: 'application/json' });
+  assert.ok(file.size > 20000000);
+  const restored = await readBackupFile(file);
+  assert.deepEqual(restored.dogs, input.dogs);
+  assert.deepEqual(restored.readings, input.readings);
+});
+
+test('file reader rejects invalid JSON, invalid records and unreadable files', async () => {
+  await assert.rejects(readBackupFile(new Blob(['{'])), SyntaxError);
+  const invalid = backup();
+  invalid.readings[0].rate = 999;
+  await assert.rejects(readBackupFile(new Blob([JSON.stringify(invalid)])), /inconsistent breathing rate/);
+  await assert.rejects(readBackupFile({ text: async () => { throw new Error('Cannot read file'); } }), /Cannot read file/);
 });
 
 test('reject incompatible, incomplete, duplicate and orphaned backups', () => {

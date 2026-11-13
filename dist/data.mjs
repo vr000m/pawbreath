@@ -45,8 +45,7 @@ export function validateReading(reading) {
 export function validateBackup(input) {
   requireValue(input && input.format === FORMAT && input.version === VERSION,
     'Choose a Pawbreath version 1 backup (.json).');
-  requireValue(Array.isArray(input.dogs) && input.dogs.length <= 100 &&
-    Array.isArray(input.readings) && input.readings.length <= 50000, 'This backup is too large or incomplete.');
+  requireValue(Array.isArray(input.dogs) && Array.isArray(input.readings), 'This backup is incomplete.');
   const dogs = input.dogs.map(validateDog);
   const readings = input.readings.map(validateReading);
   const dogIds = new Set(dogs.map(dog => dog.id));
@@ -59,6 +58,10 @@ export function validateBackup(input) {
 
 export function makeBackup(snapshot) {
   return { ...validateBackup({ format: FORMAT, version: VERSION, ...snapshot }), exportedAt: new Date().toISOString() };
+}
+
+export async function readBackupFile(file) {
+  return validateBackup(JSON.parse(await file.text()));
 }
 
 function csvCell(value) {
