@@ -49,7 +49,7 @@ Open the printed temporary file in a browser to run it. The title and an on-page
 
 ## Cloudflare Workers
 
-Deploy the static app to `pawbreath.com` using [Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/). The Wrangler configuration uploads only `dist/` and attaches the apex domain. There is no app build step or server-side database. Journal data stays in the browser, and each hostname has its own journal storage.
+Deploy the static app to `pawbreath.com` using [Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/). The Wrangler configuration uploads only `dist/` and attaches the apex domain. There is no app build step or server-side database. Journal data stays in the browser, and each hostname has its own journal storage. The deployed site is publicly reachable with no access control, so anyone with the URL can load the app, but they can only see journal data stored in their own browser.
 
 Install Node.js 22.12+ and [just](https://github.com/casey/just), then run:
 
@@ -72,7 +72,7 @@ Keep credential files outside the repository. `.env*`, `.dev.vars*`, `.openai/`,
 
 ## Current delivery state
 
-Source implementation, all 20 Node tests and the 11-check Chromium browser harness pass. The local preview also fits a 375px mobile viewport without horizontal overflow. Real-device installation, a two-version service-worker update during a count, and deployment remain unverified.
+Source implementation, the Node tests and the 11-check Chromium browser harness pass. The local preview also fits a 375px mobile viewport without horizontal overflow. Real-device installation, a two-version service-worker update during a count, and deployment remain unverified.
 
 A private Site was originally registered, with its identity saved locally in the ignored `.openai/hosting.json` file. Cloudflare Workers is now the deployment target; the Sites identity is retained locally but is not used by the recipes above. No production deployment has been performed.
 
