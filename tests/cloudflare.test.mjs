@@ -33,6 +33,7 @@ process.exit(command === 'whoami' ? Number(process.env.AUTH_EXIT || 0) : 0);
 `, { mode: 0o755 });
   return {
     envFile,
+    root,
     run(command, overrides = {}) {
       const result = spawnSync('bash', [script, command], {
         cwd: tmpdir(), encoding: 'utf8',
@@ -80,4 +81,39 @@ test('Cloudflare wrapper rejects a missing explicit credential file before runni
   const result = run('deploy', { CLOUDFLARE_ENV_FILE: envFile + '.missing' });
   assert.notEqual(result.status, 0);
   assert.deepEqual(result.calls, []);
+});
+
+// State space for CLOUDFLARE_ENV_FILE: the value is consumed after the script cd's to the repo root
+// and bash `source` searches PATH for slash-less names, so only absolute paths are unambiguous.
+test('Cloudflare wrapper accepts only absolute CLOUDFLARE_ENV_FILE values', t => {
+  const cases = [
+    { name: 'unset', file: () => '', token: 'fixture-token', ok: true, loaded: false },
+    { name: 'unset, no token', file: () => '', token: '', ok: true, loaded: true },
+    { name: 'absolute existing over exported token', file: f => f.envFile, token: 'fixture-token', ok: true, loaded: true },
+    { name: 'absolute missing', file: f => f.envFile + '.missing', token: 'fixture-token', ok: false },
+    { name: 'relative with slash', file: () => './credentials.env', token: 'fixture-token', ok: false },
+    { name: 'relative subpath', file: () => 'decoy-path/credentials.env', token: 'fixture-token', ok: false },
+    { name: 'bare name present at repo root', file: () => 'credentials.env', token: 'fixture-token', ok: false },
+    { name: 'bare name present on PATH', file: () => 'credentials.env', token: '', ok: false, onPath: true },
+    { name: 'tilde (unexpanded)', file: () => '~/credentials.env', token: 'fixture-token', ok: false },
+  ];
+  for (const c of cases) {
+    // A fresh fixture per case keeps the call log isolated. Same-named decoys sit at the script's
+    // repo root (credentials.env) and in a PATH directory, the two places a relative value could resolve.
+    const f = fixture(t);
+    const decoyDir = join(f.root, 'decoy-path');
+    mkdirSync(decoyDir);
+    copyFileSync(f.envFile, join(decoyDir, 'credentials.env'));
+    const overrides = { CLOUDFLARE_ENV_FILE: c.file(f), CLOUDFLARE_API_TOKEN: c.token };
+    if (c.onPath) overrides.PATH = decoyDir + ':' + process.env.PATH;
+    const result = f.run('deploy', overrides);
+    if (c.ok) {
+      assert.equal(result.status, 0, `${c.name}: ${result.stderr}`);
+      assert.ok(result.calls.length > 0 && result.calls.every(call => call.fileToken === c.loaded), c.name);
+    } else {
+      assert.notEqual(result.status, 0, c.name);
+      assert.deepEqual(result.calls, [], c.name);
+      if (!overrides.CLOUDFLARE_ENV_FILE.startsWith('/')) assert.match(result.stderr, /absolute path/, c.name);
+    }
+  }
 });

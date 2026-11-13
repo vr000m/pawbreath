@@ -15,6 +15,12 @@ cf_env_file="${CLOUDFLARE_ENV_FILE:-}"
 if [[ -z "$cf_env_file" && -z "${CLOUDFLARE_API_TOKEN:-}" && -f "$HOME/.secrets/cf.env" ]]; then
   cf_env_file="$HOME/.secrets/cf.env"
 fi
+# Only absolute paths are unambiguous: this script cd's to the repo root, and `source` searches
+# PATH for names without a slash.
+if [[ -n "$cf_env_file" && "$cf_env_file" != /* ]]; then
+  echo "CLOUDFLARE_ENV_FILE must be an absolute path (got '$cf_env_file')." >&2
+  exit 2
+fi
 if [[ -n "$cf_env_file" ]]; then
   set -a
   source "$cf_env_file"
