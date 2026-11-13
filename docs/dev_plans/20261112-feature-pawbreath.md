@@ -1,10 +1,10 @@
 # Pawbreath home-screen app
 
-**Status** Blocked — implementation complete, browser verification and publication pending
-**Component** Pawbreath
+**Status:** In review — 1.1.0 implementation and desktop verification complete; iPhone acceptance and publication pending
+**Component:** Pawbreath
 **Assignee** Codex
 **Priority** Normal
-**Branch** main (working files only)
+**Branch:** feature/manual-readings-pwa-updates
 **Date** 2026-11-12
 **Objective** Provide a usable offline dog breathing journal on a phone.
 
@@ -167,3 +167,27 @@ Verification: all 36 Node tests and syntax checks pass, the 14-check Chromium ha
 
 ### 2026-11-13 commit handoff
 The original session could edit the working tree but could not write `.git` under its permission profile. The changes are carried on `feature/manual-readings-pwa-updates` for a scoped, approved Git commit rather than a direct commit to `main`. The 1.1.0 build was `97cf4acd7372` at handoff; a later `/code-review` pass changed app source (manual-year bound, stricter release validation, build-hash file selection) and regenerated it as `f723457c94a8`. No deployment is part of this handoff. The earlier uncommitted status describes that blocked session, not a defect in the implementation or a stale Git lock.
+
+### 2026-11-13 breathing guidance and comparable history
+
+Added locally on `feature/manual-readings-pwa-updates` after review-fix commit `fc36265`. Preserve the review decisions, including explicit dirty-draft handling, manual-rate cap, best-effort CSV export and worker build validation.
+
+- Measure now has expandable guidance for adult dogs, with settled-sleep measurement instructions, the general 30 breaths/min contact-vet reference, rising-rate guidance and an urgent-care instruction for breathing difficulty. It is informational, not an automatic diagnosis or a default dog threshold. No breed/weight/sex/neuter adjustments or baseline alert algorithm are introduced.
+- Source links and review date are included in the cached HTML: [Ceva/Cardalis monitoring](https://dogheartdisease.com/monitoring/), [healthy adult dog sleeping-rate study](https://pubmed.ncbi.nlm.nih.gov/22240295/), and [VCA home monitoring](https://vcahospitals.com/know-your-pet/home-breathing-rate-evaluation). External sources require connectivity; the guidance itself remains available offline.
+- Context choices clarify settled sleep versus calm-awake rest without changing stored values. Profile help keeps the vet-entered threshold optional and separate from general guidance. Results identify a comparison as being against the threshold the owner entered, without labelling lower results normal or safe.
+- A History context filter applies to chart and list alongside the date filter. Unknown legacy context is never inferred. Uncertain readings stay visible and labelled. Exports remain complete. Saving either a timed or manual reading clears an incompatible context filter and widens the date range when necessary, extending the review's saved-entry visibility requirement.
+- Release remains 1.1.0 with regenerated build `a3f2bc133df7`.
+
+Verification: 38 Node tests and syntax checks pass; all 16 browser-harness checks pass using a served preview in Chromium. The two added checks cover threshold independence and context filtering, including export completeness and newly saved reading visibility. Guidance and History fit a 375px viewport without horizontal overflow. A separate clean browser context installed the actual service worker and reloaded offline successfully with the guidance present. The browser harness still simulates update registration; it does not establish two-build upgrade safety.
+
+The latest Wrangler dry-run completion check was rejected by automatic approval review, citing possible transmission of assets/metadata to Cloudflare. Treat the dry run as unconfirmed; no retry or deployment was performed. All changes in this subsection are local and uncommitted.
+
+CLI handoff: review the current diff and its source wording, run `npm test`, run the browser harness, and complete an approved `just deploy-check`. Test a real service-worker transition between two distinct builds with an active count, pending result, dirty manual form and multiple open clients; activation must wait until clients close and preserve IndexedDB data. Confirm offline behaviour after the upgrade. A physical iPhone home-screen acceptance check remains separate. Do not deploy as part of this handoff.
+
+### 2026-11-13 verification and documentation closure
+
+This follow-up supersedes the blocked dry-run and pending desktop-upgrade claims above; earlier entries record the limits of those sessions. `npm test` passes all 38 tests, release metadata and syntax checks; `just deploy-check` completes the Wrangler dry run; the 16-check browser harness passes. Review confirms that the general 30 breaths/min reference never supplies a profile threshold, History applies the same context/date filters to chart and list, exports retain all records, and timed/manual saves clear filters that would hide the saved entry.
+
+A real localhost Chromium service-worker upgrade from `b54a8e48353a` to `a3f2bc133df7` preserved an active count, pending result notes, a dirty manual form and profile edits while the new worker waited. With two clients open, closing one left the update waiting and the remaining draft intact. After saving and closing all clients naturally, the new build opened offline with identical IndexedDB journal data. Offline guidance, actual chart rendering, CSV/JSON downloads and timed/manual save visibility passed. The tested target assets match the working `dist/` byte for byte. These checks used real worker registration and activation without `skipWaiting`; the file harness still uses simulated registration.
+
+The implementation and review fixes are committed on the feature branch. Commit `bcc237d` adds the reviewed guidance, History context filter and regression checks; this documentation correction is a separate commit. [PR #2](https://github.com/vr000m/pawbreath/pull/2) remains open. No merge or deployment was performed. Physical iPhone acceptance remains: Safari home-screen installation, offline reopening after fully quitting, activation with Safari and the installed app open, and lock-screen/app-switch cancellation of counts. Unsaved forms survive update checks/downloads; save before intentionally closing the app. The user-reported checks for the earlier deployed baseline do not establish acceptance of this release.
