@@ -1,6 +1,8 @@
 // Bump the cache version whenever an app-shell asset changes.
-const CACHE = 'pawbreath-shell-v2';
-const ASSETS = ['./', './index.html', './app.css', './app.js', './data.mjs',
+const CACHE = 'pawbreath-shell-v4';
+// The scope root is the app shell document. Do not also list index.html: static hosts such as
+// Cloudflare Workers Assets redirect it to the root, and installation rejects redirected responses.
+const ASSETS = ['./', './app.css', './app.js', './data.mjs',
   './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 const urls = ASSETS.map(path => new URL(path, self.registration.scope).href);
 
@@ -11,7 +13,7 @@ self.addEventListener('install', event => {
       const response = await fetch(url, { cache: 'reload', credentials: 'same-origin' });
       if (!response.ok || response.redirected) throw new Error('App asset unavailable.');
       // An authentication page must never replace the app shell.
-      if (url.endsWith('/') || url.endsWith('/index.html')) {
+      if (url.endsWith('/')) {
         const body = await response.clone().text();
         if (!body.includes('id="breath-button"')) throw new Error('App shell unavailable.');
       }
