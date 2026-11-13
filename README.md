@@ -47,10 +47,33 @@ node tests/browser-check.mjs
 
 Open the printed temporary file in a browser to run it. The title and an on-page report show its results. Test databases use `pawbreath-verification-*` names. The harness does not test service workers. For a served browser check, also verify the 375px mobile layout, offline reload, install-to-home-screen flow, and a worker update while a count is running.
 
+## Cloudflare Workers
+
+Deploy the static app to `pawbreath.com` using [Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/). The Wrangler configuration uploads only `dist/` and attaches the apex domain. There is no app build step or server-side database. Journal data stays in the browser, and each hostname has its own journal storage.
+
+Install Node.js 22+ and [just](https://github.com/casey/just), then run:
+
+```sh
+just install        # Install the locked Wrangler development dependency
+just dev            # Local Workers preview at http://127.0.0.1:8766
+just test           # Full Node suite and syntax checks
+just cf-whoami      # Read-only account/authentication check
+just deploy-check   # Tests and a local deployment dry run
+just deploy         # Tests, authentication check, then production deployment
+```
+
+Use `just dev 8767` if the default port is already occupied.
+
+`just cf-whoami` and `just deploy` load `~/.secrets/cf.env` if `CLOUDFLARE_API_TOKEN` is not already exported. The file should contain shell-compatible assignments for `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. To use another file, set `CLOUDFLARE_ENV_FILE=/absolute/path/to/file.env`. An explicit file override takes precedence over exported credentials; an unreadable override fails immediately. Without a file or exported token, Wrangler uses its existing login (`./node_modules/.bin/wrangler login`). Local preview and dry runs do not load the external credential file.
+
+Deployment needs a token scoped to the target account with Workers Scripts edit access, plus Zone read and Workers Routes write access for `pawbreath.com` ([Workers permissions](https://developers.cloudflare.com/workers/authorization/workers/)). The domain must be an active Cloudflare zone in that account. The deployment config creates the custom-domain association and disables `workers.dev` and preview URLs. It does not configure `www.pawbreath.com`. After deployment, verify HTTPS, offline reload and home-screen installation at the final hostname.
+
+Keep credential files outside the repository. `.env*`, `.dev.vars*`, `.openai/`, `node_modules/` and `.wrangler/` are ignored. The runtime site does not need any Cloudflare credentials.
+
 ## Current delivery state
 
-Source implementation, all 14 Node tests and the 11-check Chromium browser harness pass. The local preview also fits a 375px mobile viewport without horizontal overflow. Real-device installation, a two-version service-worker update during a count, and deployment remain unverified.
+Source implementation, all 18 Node tests and the 11-check Chromium browser harness pass. The local preview also fits a 375px mobile viewport without horizontal overflow. Real-device installation, a two-version service-worker update during a count, and deployment remain unverified.
 
-A private Site was registered, with its identity saved locally in the ignored `.openai/hosting.json` file. No version was deployed. Resume publication with this existing Site identity when network access is available.
+A private Site was originally registered, with its identity saved locally in the ignored `.openai/hosting.json` file. Cloudflare Workers is now the deployment target; the Sites identity is retained locally but is not used by the recipes above. No production deployment has been performed.
 
 The app now lives in the standalone [Pawbreath repository](https://github.com/vr000m/pawbreath), moved from `tinkerbox/www/pawbreath`. Run the commands above from this repository's root. Git tracks `dist/` as app source; local hosting configuration in `.openai/`, credentials, editor state and verification output are ignored.
