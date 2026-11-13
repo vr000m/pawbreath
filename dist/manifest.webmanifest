@@ -1,0 +1,15 @@
+{
+  "id": "./",
+  "name": "Pawbreath — Dog Breathing Journal",
+  "short_name": "Pawbreath",
+  "description": "Count resting breaths and keep a journal for your dog.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f8f8f2",
+  "theme_color": "#1e493f",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

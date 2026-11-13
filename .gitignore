@@ -1,0 +1,28 @@
+# macOS and editor state
+.DS_Store
+._*
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+
+# Optional development tools and verification output
+node_modules/
+coverage/
+.nyc_output/
+.cache/
+playwright-report/
+test-results/
+*.log
+pawbreath-browser-check.html
+
+# dist/ is the app source; .openai/hosting.json stores its Site identity.

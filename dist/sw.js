@@ -1,0 +1,42 @@
+// Bump the cache version whenever an app-shell asset changes.
+const CACHE = 'pawbreath-shell-v1';
+const ASSETS = ['./', './index.html', './app.css', './app.js', './data.mjs',
+  './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const urls = ASSETS.map(path => new URL(path, self.registration.scope).href);
+
+self.addEventListener('install', event => {
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    for (const url of urls) {
+      const response = await fetch(url, { cache: 'reload', credentials: 'same-origin' });
+      if (!response.ok || response.redirected) throw new Error('App asset unavailable.');
+      // An authentication page must never replace the app shell.
+      if (url.endsWith('/') || url.endsWith('/index.html')) {
+        const body = await response.clone().text();
+        if (!body.includes('id="breath-button"')) throw new Error('App shell unavailable.');
+      }
+      await cache.put(url, response);
+    }
+  })());
+  // Let the next launch activate an update after existing clients close.
+});
+
+self.addEventListener('activate', event => {
+  event.waitUntil((async () => {
+    for (const name of await caches.keys()) {
+      if (name.startsWith('pawbreath-shell-') && name !== CACHE) await caches.delete(name);
+    }
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+  url.search = ''; url.hash = '';
+  if (!urls.includes(url.href)) return;
+  event.respondWith((async () => {
+    const cached = await (await caches.open(CACHE)).match(url.href);
+    return cached ?? fetch(event.request);
+  })());
+});
