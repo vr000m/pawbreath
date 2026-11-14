@@ -74,3 +74,15 @@ test('installed mode hides only the install steps; the offline status stays visi
   const standalone = css.match(/@media\(display-mode:standalone\)\s*\{([\s\S]*?)\n\}/)[1];
   assert.ok(standalone.includes('.install-steps') && !standalone.includes('#home-screen-card'), 'the whole card must not be hidden');
 });
+
+test('form controls are at least 16px so iOS Safari does not zoom the page on focus', () => {
+  const css = read('app.css');
+  const small = [];
+  for (const [, selector, body] of css.matchAll(/([^{}@]+)\{([^{}]*)\}/g)) {
+    const size = body.match(/font-size:\s*(\d+(?:\.\d+)?)px/);
+    if (!size || Number(size[1]) >= 16) continue;
+    const controls = selector.split(',').map(part => part.trim()).filter(part => /(^|[\s>])(select|textarea|input)\b/.test(part) && !part.includes('type=file'));
+    if (controls.length) small.push(`${controls.join(', ')} { font-size: ${size[1]}px }`);
+  }
+  assert.deepEqual(small, []);
+});
