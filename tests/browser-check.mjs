@@ -357,13 +357,18 @@ await check('Smoke: a long dog name fits beside the phone picker controls', asyn
     const doc = frame.contentDocument;
     for (let i = 0; i < 50 && !doc.styleSheets.length; i++) await sleep(50);
     assert(frame.contentWindow.matchMedia('(max-width:600px)').matches, 'the frame is not phone width');
+    assert(frame.contentWindow.getComputedStyle(doc.querySelector('#measure-page .dog-picker')).display === 'grid', 'the stylesheet did not apply (picker not a grid)');
     const box = selector => doc.querySelector(selector).getBoundingClientRect();
     assert(box('#selected-dog').right <= box('#add-dog').left + 0.5, 'Measure: the select runs under + Add a dog');
     assert(box('#history-dog-select').right <= box('.history-toolbar .segments').left + 0.5, 'History: the select runs under the period buttons');
     assert(box('.history-toolbar .segments').right <= 320 && box('#add-dog').right <= 320, 'a control is pushed off a 320px screen');
   } finally { frame.remove(); }
 });
-await check('Mid-count on a 320x480 phone the whole circle clears the pinned Undo/Cancel bar', async () => {
+// Mid-count geometry across phone heights. Margins measured in Chromium (circle bottom minus bar top): -12 at
+// 480, -2.2 at 561, -7.3 at 568, -12 from 641 to 666 (picker and instruction hidden), +11.6 at 667, -0.8 at 684.
+// Between 667 and 682 the circle dips into the bar's transparent top fade (pointer-events:none) but clears the
+// solid Undo button; without the short-phone block it reached Undo up to 663px. Below about 461px nothing clears.
+await check('Mid-count the whole circle clears the pinned Undo/Cancel bar from 480px to 844px tall', async () => {
   const frame = document.createElement('iframe');
   frame.style.cssText = 'position:absolute;left:-10000px;top:0;width:320px;height:480px;border:0';
   frame.srcdoc = '<!doctype html><html><head><meta name="viewport" content="width=device-width"><link rel="stylesheet" href="' + document.querySelector('link[rel=stylesheet]').href + '"></head><body>'
@@ -374,7 +379,6 @@ await check('Mid-count on a 320x480 phone the whole circle clears the pinned Und
     await loaded;
     const doc = frame.contentDocument;
     for (let i = 0; i < 50 && !doc.styleSheets.length; i++) await sleep(50);
-    assert(frame.contentWindow.matchMedia('(max-width:600px) and (max-height:560px)').matches, 'the frame is not a very short phone');
     // The state counting() sets up: Measure shown, the circle active, Undo and Cancel in place of Start.
     for (const section of doc.querySelectorAll('.page')) section.hidden = section.id !== 'measure-page';
     doc.querySelector('#breath-button').classList.add('active');
@@ -382,8 +386,22 @@ await check('Mid-count on a 320x480 phone the whole circle clears the pinned Und
     doc.querySelector('#undo').hidden = false;
     doc.querySelector('#cancel').hidden = false;
     const box = selector => doc.querySelector(selector).getBoundingClientRect();
-    for (const selector of ['#timer-label', '#timer-progress', '#breath-button', '#counter-number', '#undo', '#cancel']) assert(box(selector).height > 0, selector + ' is not shown mid-count');
-    assert(box('#breath-button').bottom <= box('#counter-controls').top + 0.5, 'the pinned controls cover the circle (' + box('#breath-button').bottom + ' > ' + box('#counter-controls').top + ')');
+    // [width, height, what the circle must clear]
+    const cases = [[320,480,'#counter-controls'],[320,560,'#counter-controls'],[320,561,'#counter-controls'],[320,568,'#counter-controls'],
+      [360,640,'#counter-controls'],[360,641,'#counter-controls'],[360,660,'#counter-controls'],[360,666,'#counter-controls'],
+      [375,667,'#undo'],[360,680,'#undo'],[360,684,'#counter-controls'],[375,700,'#counter-controls'],[390,844,'#counter-controls']];
+    for (const [width, height, target] of cases) {
+      frame.style.width = width + 'px';
+      frame.style.height = height + 'px';
+      const at = width + 'x' + height + ': ';
+      assert(frame.contentWindow.matchMedia('(max-width:600px)').matches, at + 'the frame is not phone width');
+      // Guard: an unstyled frame puts the controls in flow below the circle and would pass vacuously.
+      assert(frame.contentWindow.getComputedStyle(doc.querySelector('#counter-controls')).position === 'sticky', at + 'the stylesheet did not apply (controls not sticky)');
+      const size = Math.min(225, Math.max(150, height * 0.27));
+      assert(Math.abs(box('#breath-button').height - size) < 1, at + 'the circle is not clamp-sized (' + box('#breath-button').height + ' vs ' + size + ')');
+      for (const selector of ['#timer-label', '#timer-progress', '#breath-button', '#counter-number', '#undo', '#cancel']) assert(box(selector).height > 0, at + selector + ' is not shown mid-count');
+      assert(box('#breath-button').bottom <= box(target).top + 0.5, at + target + ' covers the circle (' + box('#breath-button').bottom + ' > ' + box(target).top + ')');
+    }
   } finally { frame.remove(); }
 });
 await refresh();

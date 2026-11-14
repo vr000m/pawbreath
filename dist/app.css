@@ -1202,9 +1202,12 @@ nav button[aria-current=page] svg .knob {
   }
 }
 
-/* Short phones (about 640px of visible height or less): mid-count, drop the duration picker and the
-   instruction line so the whole circle clears the pinned Undo/Cancel bar. */
-@media(max-width:600px) and (max-height:640px) {
+/* Short phones (666px of visible height or less, which covers the common 360x640-660 Android sizes):
+   mid-count, drop the duration picker and the instruction line so the whole circle clears the pinned
+   Undo/Cancel bar. With them shown, the circle reaches the solid Undo button up to 663px tall (16.6px at 641);
+   666 adds a little headroom. At 667 (iPhone SE 2nd gen, 8) and up to 682 the circle only dips into the bar's
+   transparent top fade, which ignores taps, so those phones keep the picker. */
+@media(max-width:600px) and (max-height:666px) {
   #measure-page:has(.breath-circle.active) .counter-card .card-top,
   #measure-page:has(.breath-circle.active) #counter-instruction {
     display:none;

@@ -238,13 +238,28 @@ test('very short phones drop the dog picker mid-count, so the 150px circle clear
   const css = read('app.css');
   const shortQuery = /^@media\s*\(\s*max-width\s*:\s*600px\s*\)\s*and\s*\(\s*max-height\s*:\s*(\d+)px\s*\)\s*$/;
   const heights = topLevel(css).map(({ prelude }) => prelude.match(shortQuery)?.[1]).filter(Boolean).map(Number);
-  // 640: the duration picker and instruction go. Below about 557px the circle's 150px minimum, the chrome
-  // still shown above it and the pinned bar no longer fit, so a second step must start between there and 568
-  // (a 568px-tall phone keeps its picker).
-  assert.ok(heights.includes(640), 'the short-phone block is kept');
+  // 666: the duration picker and instruction go (see the next test). Below about 557px the circle's 150px
+  // minimum, the chrome still shown above it and the pinned bar no longer fit, so a second step must start
+  // between there and 568 (a 568px-tall phone keeps its picker).
+  assert.ok(heights.includes(666), 'the short-phone block is kept');
   const veryShort = heights.filter(height => height >= 557 && height < 568);
   assert.equal(veryShort.length, 1, `one very-short-phone block between 557px and 567px tall (found ${heights.join(', ')})`);
   const [block] = atBlocks(css, new RegExp(`^@media\\s*\\(\\s*max-width\\s*:\\s*600px\\s*\\)\\s*and\\s*\\(\\s*max-height\\s*:\\s*${veryShort[0]}px\\s*\\)\\s*$`));
   const rule = rules(block).find(({ selectors }) => selectors.some(part => /#measure-page:has\(\s*\.breath-circle\.active\s*\)\s+\.dog-picker$/.test(part)));
   assert.ok(rule && /display:\s*none/.test(rule.body), 'the Measure dog picker is removed from the flow mid-count');
+});
+
+test('short phones drop the duration picker and instruction mid-count up to 666px tall, so the circle clears Undo', () => {
+  const css = read('app.css');
+  const shortQuery = /^@media\s*\(\s*max-width\s*:\s*600px\s*\)\s*and\s*\(\s*max-height\s*:\s*(\d+)px\s*\)\s*$/;
+  const heights = topLevel(css).map(({ prelude }) => prelude.match(shortQuery)?.[1]).filter(Boolean).map(Number);
+  // Measured in Chromium with the picker and instruction shown: the circle reaches the solid Undo button up to
+  // 663px tall (16.6px at 641). 667 (iPhone SE 2nd gen, 8) only dips into the bar's transparent fade and keeps
+  // its layout, so the step must start between 664 and 666.
+  const short = heights.filter(height => height >= 664 && height < 667);
+  assert.equal(short.length, 1, `one short-phone block between 664px and 666px tall (found ${heights.join(', ')})`);
+  const [block] = atBlocks(css, new RegExp(`^@media\\s*\\(\\s*max-width\\s*:\\s*600px\\s*\\)\\s*and\\s*\\(\\s*max-height\\s*:\\s*${short[0]}px\\s*\\)\\s*$`));
+  const selectors = rules(block).filter(({ body }) => /display:\s*none/.test(body)).flatMap(({ selectors }) => selectors);
+  assert.ok(selectors.some(part => /#measure-page:has\(\s*\.breath-circle\.active\s*\)\s+\.counter-card\s+\.card-top$/.test(part)), 'the duration picker is removed mid-count');
+  assert.ok(selectors.some(part => /#measure-page:has\(\s*\.breath-circle\.active\s*\)\s+#counter-instruction$/.test(part)), 'the instruction is removed mid-count');
 });
