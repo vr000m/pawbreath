@@ -18,6 +18,18 @@ export function withReadingDefaults(reading) {
     uncertain: reading.uncertain === undefined ? false : reading.uncertain };
 }
 
+// Which dog to open: the one chosen last if it still exists, else the dog with the newest reading
+// (the one being tracked), else the first by name. Dogs are expected in display order.
+export function defaultDogId(dogs, readings, remembered = '') {
+  if (dogs.some(dog => dog.id === remembered)) return remembered;
+  const ids = new Set(dogs.map(dog => dog.id));
+  let best = '', bestDate = '';
+  for (const reading of readings) {
+    if (ids.has(reading.dogId) && typeof reading.date === 'string' && reading.date > bestDate) { best = reading.dogId; bestDate = reading.date; }
+  }
+  return best || dogs[0]?.id || '';
+}
+
 function requireValue(condition, message) {
   if (!condition) throw new Error(message);
 }

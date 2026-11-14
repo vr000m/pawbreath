@@ -48,3 +48,18 @@ test('the browser harness builds only when every source substitution applies', (
   assert.ok(!html.includes('<script type="module" src="./app.js">'));
   assert.ok(html.includes('harnessServiceWorker, getRelease'));
 });
+
+test('phone layout: SVG tab icons, History controls in one toolbar, Export CSV beside the backup buttons', () => {
+  const html = readFileSync(new URL('../dist/index.html', import.meta.url), 'utf8');
+  const nav = html.match(/<nav aria-label="Main navigation">([\s\S]*?)<\/nav>/)[1];
+  assert.equal((nav.match(/<svg /g) ?? []).length, 3, 'each tab has an SVG icon');
+  for (const glyph of ['◉', '▥', '⚙']) assert.ok(!html.includes(glyph), `glyph ${glyph} renders differently per platform`);
+  const history = html.match(/<section id="history-page"[\s\S]*?<section id="settings-page"/)[0];
+  const toolbar = history.match(/<div class="history-toolbar">([\s\S]*?)<\/div><\/div>/)[1];
+  assert.ok(toolbar.includes('id="history-dog-select"') && toolbar.includes('data-range="30"'), 'dog picker and period share the toolbar');
+  assert.ok(!history.includes('id="csv-export"'), 'Export CSV exports every dog, so it does not belong on one dog\'s History page');
+  assert.ok(history.indexOf('id="history-chart"') < history.indexOf('id="history-context"'), 'the chart comes before the context filter');
+  const settings = html.match(/<section id="settings-page"[\s\S]*?<footer/)[0];
+  assert.ok(settings.includes('id="csv-export"') && settings.includes('id="home-screen-card"'));
+  assert.ok(!/<p class="small muted">For sleeping readings/.test(html), 'the card keeps one instruction line');
+});

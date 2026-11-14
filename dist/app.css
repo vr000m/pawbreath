@@ -1073,3 +1073,145 @@ dialog label {
   margin:-14px 0 22px;
   max-width:290px;
 }
+
+/* Tab icons are inline SVG so they look the same on iOS and Android. */
+nav button svg {
+  width:20px;
+  height:20px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.7;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  vertical-align:-4px;
+  margin-right:6px;
+  flex:none;
+}
+
+nav button svg .knob {
+  fill:#fbfcf7;
+}
+
+nav button[aria-current=page] svg .knob {
+  fill:#e6eddf;
+}
+
+/* History: dog and period share one row above the chart. */
+.history-toolbar {
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:12px 24px;
+  margin-bottom:18px;
+}
+
+.history-toolbar .history-dog-picker {
+  padding-top:0;
+  margin:0;
+  max-width:290px;
+  min-width:0;
+  flex:1 1 180px;
+}
+
+.history-toolbar .segments {
+  flex:none;
+}
+
+#history-context {
+  margin-bottom:0;
+}
+
+.chart-card .history-context-filter {
+  margin:20px 0 0;
+}
+
+.actions #csv-export {
+  white-space:nowrap;
+}
+
+/* Measure and History lead with the task on a phone: compact titles, Start counting in the thumb zone. */
+@media(max-width:600px) {
+  nav button svg {
+    display:block;
+    width:23px;
+    height:23px;
+    margin:0 auto 3px;
+  }
+  main {
+    padding-top:16px;
+  }
+  #measure-page .eyebrow, #measure-page .subtitle, #history-page .eyebrow {
+    display:none;
+  }
+  #measure-page .page-heading, #history-page .page-heading {
+    margin-bottom:14px;
+  }
+  #measure-page h1, #history-page h1 {
+    font-size:29px;
+    letter-spacing:-1px;
+    margin-bottom:0;
+  }
+  #history-page .subtitle {
+    margin:8px 0 0;
+    max-width:none;
+  }
+  #history-page .page-heading .actions {
+    margin-top:12px;
+  }
+  #measure-page .dog-picker {
+    padding-top:12px;
+  }
+  .breath-circle {
+    width:clamp(150px,27vh,225px);
+    height:clamp(150px,27vh,225px);
+    margin-top:12px;
+    margin-bottom:6px;
+  }
+  .counter-controls {
+    position:sticky;
+    bottom:calc(76px + env(safe-area-inset-bottom));
+    z-index:2;
+    margin-top:12px;
+    padding:14px 0 6px;
+    background:linear-gradient(to bottom,#fffefa00,#fffefa 28%);
+    pointer-events:none;
+  }
+  .counter-controls>* {
+    pointer-events:auto;
+  }
+  .text-button {
+    min-height:44px;
+  }
+  /* Mid-count the title is dead weight; give the tap target the room (the dog picker stays). */
+  #measure-page:has(.breath-circle.active) h1 {
+    display:none;
+  }
+  .history-toolbar {
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    align-items:end;
+    gap:0 10px;
+  }
+  .history-toolbar .history-dog-picker {
+    max-width:none;
+  }
+  .history-toolbar .dog-picker label {
+    margin-bottom:5px;
+  }
+  /* The manual form is taller than a phone: keep Save and Cancel reachable. */
+  #manual-form .actions {
+    position:sticky;
+    bottom:-23px;
+    margin:12px -23px -23px;
+    padding:12px 23px calc(14px + env(safe-area-inset-bottom));
+    background:#fffefa;
+    border-top:1px solid var(--line);
+  }
+}
+
+/* Once installed, the install instructions are noise. */
+@media(display-mode:standalone) {
+  #home-screen-card {
+    display:none;
+  }
+}

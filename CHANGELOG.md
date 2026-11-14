@@ -4,6 +4,14 @@ User-visible changes are recorded here. Unreleased changes have not been deploye
 
 ## Unreleased
 
+### Changed
+
+- Phone layout: Measure fits one screen with Start counting always reachable, the timer sits above the count circle, and the title steps aside while a count runs. History puts the dog picker and period on one row above the chart, with the context filter below it.
+- The app opens on the dog you last chose, otherwise the dog with the newest reading, instead of the first dog alphabetically.
+- Export CSV moved from History to Settings, next to the backup buttons, because it exports every dog.
+- Tab bar uses drawn icons instead of text symbols, so they match on iPhone and Android.
+- The manual-entry dialog keeps Save and Cancel visible while the form scrolls; the install instructions are hidden once the app is installed.
+
 ### Fixed
 
 - The History page has its own dog picker, shared with Measure, so a dog's readings are no longer hidden behind a selector that only existed on another page.
