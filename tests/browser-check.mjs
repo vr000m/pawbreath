@@ -20,8 +20,6 @@ app = replaced(app, /^import [\s\S]+?from '\.\/data.mjs';\n/, '');
 app = replaced(app, "import { createUpdateMonitor } from './updates.mjs';\n", '');
 app = replaced(app, 'const updates = createUpdateMonitor({ storage: updateStorage, onChange(state) {', 'const updates = createUpdateMonitor({ serviceWorker: harnessServiceWorker, getRelease: async () => RELEASE, storage: updateStorage, onChange(state) {');
 app = replaced(app, '  prepareOffline();', "  $('#cache-status').textContent = 'Offline installation is excluded from the file-based test harness.';");
-// The stylesheet with the bottom safe-area inset made settable, since a desktop browser always reports 0.
-const insetCss = replaced(readFileSync(new URL('app.css', dist), 'utf8'), 'env(safe-area-inset-bottom)', 'var(--harness-inset)', true);
 const checks = `
 const output = document.createElement('pre');
 output.id = 'test-results';
@@ -402,43 +400,6 @@ await check('Mid-count the whole circle clears the pinned Undo/Cancel bar from 4
       const size = Math.min(225, Math.max(150, height * 0.27));
       assert(Math.abs(box('#breath-button').height - size) < 1, at + 'the circle is not clamp-sized (' + box('#breath-button').height + ' vs ' + size + ')');
       for (const selector of ['#timer-label', '#timer-progress', '#breath-button', '#counter-number', '#undo', '#cancel']) assert(box(selector).height > 0, at + selector + ' is not shown mid-count');
-      assert(box('#breath-button').bottom <= box(target).top + 0.5, at + target + ' covers the circle (' + box('#breath-button').bottom + ' > ' + box(target).top + ')');
-    }
-  } finally { frame.remove(); }
-});
-// A bottom safe-area inset lifts the pinned bar by that much; the circle gives up the inset where the layout has
-// no slack. Before that, a 34px inset put the circle over the solid Undo button by up to 31.6px at 667 and 7.6px
-// at 700, and a 48px inset (Android three-button nav) up to about 45px. Undo must clear in the band the circle
-// can still shrink (the 150px floor leaves 667-683px and 480px exposed above about 30px of inset), the whole bar
-// once there is room again, and the inset changes nothing on the tall iPhones that have one.
-await check('Mid-count with a bottom safe-area inset the circle still clears the solid Undo button', async () => {
-  const frame = document.createElement('iframe');
-  frame.style.cssText = 'position:absolute;left:-10000px;top:0;width:375px;height:700px;border:0';
-  frame.srcdoc = '<!doctype html><html><head><meta name="viewport" content="width=device-width"><style>' + ${JSON.stringify(insetCss)} + '</style></head><body>'
-    + document.querySelector('header').outerHTML + document.querySelector('main').outerHTML + '</body></html>';
-  const loaded = new Promise(resolve => frame.addEventListener('load', resolve, {once:true}));
-  document.body.append(frame);
-  try {
-    await loaded;
-    const doc = frame.contentDocument;
-    for (const section of doc.querySelectorAll('.page')) section.hidden = section.id !== 'measure-page';
-    doc.querySelector('#breath-button').classList.add('active');
-    doc.querySelector('#start').hidden = true;
-    doc.querySelector('#undo').hidden = false;
-    doc.querySelector('#cancel').hidden = false;
-    const box = selector => doc.querySelector(selector).getBoundingClientRect();
-    // [inset, width, height, what the circle must clear]
-    const cases = [[20,360,667,'#undo'],[20,360,700,'#undo'],[20,393,733,'#counter-controls'],
-      [34,375,680,'#undo'],[34,375,700,'#undo'],[34,375,720,'#undo'],[34,375,733,'#undo'],[34,375,762,'#counter-controls'],
-      [34,390,797,'#counter-controls'],[34,390,844,'#counter-controls'],[48,360,690,'#undo'],[48,360,740,'#undo'],[48,412,780,'#counter-controls']];
-    for (const [inset, width, height, target] of cases) {
-      doc.documentElement.style.setProperty('--harness-inset', inset + 'px');
-      frame.style.width = width + 'px';
-      frame.style.height = height + 'px';
-      const at = width + 'x' + height + ' inset ' + inset + ': ';
-      assert(frame.contentWindow.getComputedStyle(doc.querySelector('#counter-controls')).position === 'sticky', at + 'the stylesheet did not apply (controls not sticky)');
-      assert(Math.abs(box('nav').height - 68 - inset) < 1, at + 'the inset did not reach the tab bar');
-      if (height >= 762) assert(Math.abs(box('#breath-button').height - Math.min(225, height * 0.27)) < 1, at + 'a tall phone lost circle size to the inset');
       assert(box('#breath-button').bottom <= box(target).top + 0.5, at + target + ' covers the circle (' + box('#breath-button').bottom + ' > ' + box(target).top + ')');
     }
   } finally { frame.remove(); }

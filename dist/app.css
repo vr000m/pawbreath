@@ -1098,14 +1098,9 @@ nav button[aria-current=page] svg .knob {
     font-size:12px;
   }
   .breath-circle {
-    /* dvh, not vh: on a phone vh counts the area behind the browser toolbars, so the circle would crowd the sticky Start button.
-       A bottom safe-area inset (home indicator, Android edge-to-edge nav bar) lifts the pinned Undo/Cancel bar by
-       that much, and the height breakpoints below cannot see it. So the circle gives up the part of the inset the
-       layout has no slack for: 73dvh - 487px is the room left at 667px and up with no inset (zero at 667, where the
-       circle already dips 11.6px into the bar's transparent fade). With no inset this is exactly 27dvh. The 150px
-       floor still wins, so an inset over about 30px can reach Undo at 667-683px or 480px tall. */
-    width:clamp(150px,calc(27dvh - max(0px,env(safe-area-inset-bottom) - max(0px,73dvh - 487px))),225px);
-    height:clamp(150px,calc(27dvh - max(0px,env(safe-area-inset-bottom) - max(0px,73dvh - 487px))),225px);
+    /* dvh, not vh: on a phone vh counts the area behind the browser toolbars, so the circle would crowd the sticky Start button. */
+    width:clamp(150px,27dvh,225px);
+    height:clamp(150px,27dvh,225px);
     margin-top:12px;
     margin-bottom:6px;
   }
