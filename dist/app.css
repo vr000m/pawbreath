@@ -239,9 +239,6 @@ h1 {
    Media queries set only the column widths and spacing. */
 .dog-picker {
   display:grid;
-  min-width:218px;
-  max-width:290px;
-  padding-top:26px;
 }
 
 .dog-picker select {
@@ -611,10 +608,12 @@ h1 {
   padding:45px 0;
 }
 
+/* "Enter a reading" lives with the list it adds to, not above the chart. */
 .section-heading {
   display:flex;
   justify-content:space-between;
   align-items:center;
+  gap:16px;
   margin:30px 0 15px;
 }
 
@@ -624,6 +623,17 @@ h1 {
 
 .section-heading span {
   font-size:12px;
+}
+
+.section-title span {
+  display:block;
+  margin-top:3px;
+}
+
+.section-heading .secondary {
+  flex:none;
+  padding:10px 16px;
+  font-size:14px;
 }
 
 .reading-row {
@@ -922,17 +932,12 @@ nav button[aria-current=page] svg .knob {
 .history-toolbar {
   display:flex;
   align-items:flex-end;
-  justify-content:space-between;
-  gap:12px 24px;
   margin-bottom:18px;
 }
 
 .history-toolbar .history-dog-picker {
-  padding-top:0;
   margin:0;
-  max-width:290px;
   min-width:0;
-  flex:1 1 180px;
 }
 
 .history-toolbar .segments {
@@ -951,7 +956,8 @@ nav button[aria-current=page] svg .knob {
   white-space:nowrap;
 }
 
-/* Phone layout. Every phone rule lives in this one block so each property has a single phone value.
+/* Phone layout. This is the only plain max-width:600px block, so each phone property has a single value here;
+   the short-phone block further down adds height-gated overrides on top.
    Measure and History lead with the task: compact titles, Start counting in the thumb zone. */
 @media(max-width:600px) {
   :root {
@@ -1055,9 +1061,7 @@ nav button[aria-current=page] svg .knob {
   .dog-picker {
     grid-template-columns:1fr auto;
     gap:0 12px;
-    max-width:none;
     width:100%;
-    padding-top:25px;
   }
   .dog-picker label {
     margin-bottom:7px;
@@ -1131,9 +1135,6 @@ nav button[aria-current=page] svg .knob {
     gap:0 10px;
     margin-top:12px;
   }
-  .history-toolbar .history-dog-picker {
-    max-width:none;
-  }
   .history-toolbar .dog-picker label {
     margin-bottom:5px;
   }
@@ -1206,7 +1207,7 @@ nav button[aria-current=page] svg .knob {
 
 /* Wide screens: the dog picker sits in the same place on Measure and History, left-aligned under the
    heading as on a phone, with the History period toggle beside it. */
-@media(min-width:601px) {
+@media not all and (max-width:600px) {
   #measure-page .page-heading {
     display:block;
   }
@@ -1216,8 +1217,6 @@ nav button[aria-current=page] svg .knob {
     align-items:end;
     gap:0 14px;
     min-width:0;
-    max-width:none;
-    padding-top:0;
     margin-top:26px;
   }
   #measure-page .dog-picker label {
@@ -1234,20 +1233,4 @@ nav button[aria-current=page] svg .knob {
   .history-toolbar .dog-picker label {
     margin-bottom:6px;
   }
-}
-
-/* "Enter a reading" lives with the list it adds to, not above the chart. */
-.section-heading {
-  gap:16px;
-}
-
-.section-title span {
-  display:block;
-  margin-top:3px;
-}
-
-.section-heading .secondary {
-  flex:none;
-  padding:10px 16px;
-  font-size:14px;
 }

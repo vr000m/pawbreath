@@ -10,6 +10,7 @@ User-visible changes are recorded here. Unreleased changes have not been deploye
 - The app opens on the dog you last chose, otherwise the dog with the newest reading, instead of the first dog alphabetically.
 - Export CSV moved from History to Settings, next to the backup buttons, because it exports every dog.
 - Tab bar uses drawn icons instead of text symbols, so they match on iPhone and Android.
+- On phones an update notice that arrives during a count stays hidden until the count ends, so the circle keeps clear of the pinned controls; screen readers still announce it.
 - On short phones (about 640px of visible height or less) the duration picker and instruction line step aside during a count, so the whole circle clears the Undo/Cancel bar and a tap near its edge cannot hit Undo.
 - History's "Enter a reading" button moved from above the chart to the "Recorded moments" heading, beside the list it adds to; Measure still has "Enter a previous reading".
 - On wide screens the dog picker sits in the same place on Measure and History (left, under the heading), with the History period toggle beside it.

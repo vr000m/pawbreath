@@ -78,6 +78,27 @@ const atBlocks = (css, preludeRe) => {
 };
 const rules = css => [...stripComments(css).matchAll(/([^{}@]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({ selectors: selector.split(',').map(part => part.trim()), body }));
 const phoneQuery = /^@media\s*\(\s*max-width\s*:\s*600px\s*\)\s*$/;
+// Top-level blocks (rules and at-rules) in source order, with their preludes, found by brace matching.
+const topLevel = css => {
+  css = stripComments(css);
+  const blocks = [];
+  let depth = 0, start = 0;
+  for (let i = 0; i < css.length; i++) {
+    if (css[i] === '{') { if (depth++ === 0) blocks.push({ prelude: css.slice(start, i).trim() }); }
+    else if (css[i] === '}' && --depth === 0) start = i + 1;
+    else if (css[i] === ';' && depth === 0) start = i + 1;
+  }
+  return blocks;
+};
+// True when one query of a media query list applies at exactly "viewport width <= 600px" and nothing else,
+// whatever the spelling: `(max-width:600px)`, `screen and (max-width: 600px)`, `only all and (width<=600px)`.
+const isPlainPhoneQuery = query => {
+  const q = query.toLowerCase().replace(/\s+/g, ' ').trim().replace(/^(?:only )?(?:screen|all) and /, '');
+  return /^\( ?(?:max-width ?: ?600px|width ?<= ?600px|600px ?>= ?width) ?\)$/.test(q);
+};
+const plainPhonePreludes = css => topLevel(css)
+  .filter(({ prelude }) => /^@media\b/i.test(prelude))
+  .filter(({ prelude }) => prelude.replace(/^@media/i, '').split(',').some(isPlainPhoneQuery));
 
 test('phone layout: SVG tab icons, History controls in one toolbar, Export CSV beside the backup buttons', () => {
   const html = read('index.html');
@@ -89,6 +110,7 @@ test('phone layout: SVG tab icons, History controls in one toolbar, Export CSV b
   assert.ok(hasId(toolbar, 'history-dog-select') && /\bdata-range="30"/.test(toolbar), 'dog picker and period share the toolbar');
   assert.ok(!hasId(history, 'csv-export'), 'Export CSV exports every dog, so it does not belong on one dog\'s History page');
   const at = id => history.search(new RegExp(`\\bid="${id}"`));
+  for (const id of ['history-chart', 'history-context', 'history-manual-entry', 'reading-list']) assert.ok(at(id) >= 0, `#${id} is on the History page`);
   assert.ok(at('history-chart') < at('history-context'), 'the chart comes before the context filter');
   assert.ok(at('history-chart') < at('history-manual-entry') && at('history-manual-entry') < at('reading-list'), 'Enter a reading sits with the Recorded moments list, below the chart');
   const settings = slice(html, openTag('section', 'id', 'settings-page'), /<footer\b/);
@@ -128,18 +150,53 @@ test('form controls are at least 16px so iOS Safari does not zoom the page on fo
     if (/^(select|textarea|input)\b/.test(subject)) return true;
     return [...subject.matchAll(/[#.][\w-]+/g)].some(([name]) => names.has(name));
   };
+  // The size a `font-size` value or a `font` shorthand sets, as written.
+  const sizeOf = (property, value) => {
+    value = value.trim();
+    if (property === 'font-size' || /^(?:inherit|initial|unset|revert(?:-layer)?)$/.test(value)) return value;
+    const length = value.match(/(?:^|\s)(\d*\.?\d+[a-z%]+)(?=\s*\/|\s|$)/i);
+    const keyword = value.match(/(?<![\w-])(?:xx?x?-small|xx?x?-large|small|medium|large|smaller|larger)(?![\w-])/);
+    return length?.[1] ?? keyword?.[0] ?? value;
+  };
+  // A control's size must be an explicit px value of at least 16. em, rem, %, keywords, var() and calc()
+  // depend on context this test cannot see, so they are rejected on controls. The one exception is the
+  // element reset `button, input, select, textarea { font: inherit }`: it hands controls the body text size,
+  // which stays at the browser's 16px because html, :root and body never set a font size (asserted below).
+  const elementReset = selectors => selectors.every(part => /^(?:button|input|select|textarea)$/.test(part));
   const small = [];
   for (const { selectors, body } of rules(css)) {
-    const size = body.match(/font-size:\s*(\d+(?:\.\d+)?)px/);
-    if (!size || Number(size[1]) >= 16) continue;
+    if (selectors.some(part => /^(?:html|:root|body)$/.test(part))) assert.ok(!/(?:^|[;\s])font(?:-size)?\s*:/.test(body), `${selectors.join(', ')} must not set a font size`);
     const controls = selectors.filter(targetsControl);
-    if (controls.length) small.push(`${controls.join(', ')} { font-size: ${size[1]}px }`);
+    if (!controls.length) continue;
+    for (const [, property, value] of body.matchAll(/(?:^|[;\s])(font-size|font)\s*:\s*([^;]+)/g)) {
+      const size = sizeOf(property, value);
+      const px = size.match(/^(\d*\.?\d+)px$/);
+      if (px ? Number(px[1]) >= 16 : size === 'inherit' && elementReset(selectors)) continue;
+      small.push(`${controls.join(', ')} { ${property}: ${value.trim()} }`);
+    }
   }
   assert.deepEqual(small, []);
 });
 
 test('phone CSS: one max-width:600px block, so each phone property has a single value', () => {
-  assert.equal(atBlocks(read('app.css'), phoneQuery).length, 1);
+  const css = read('app.css');
+  // Every spelling of a plain 600px max-width query counts; compound ones like the short-phone block do not.
+  assert.deepEqual(plainPhonePreludes(css).map(({ prelude }) => prelude), ['@media(max-width:600px)']);
+  assert.equal(atBlocks(css, phoneQuery).length, 1);
+  // Nothing unscoped follows it, so no base rule can override a phone value by source order.
+  const blocks = topLevel(css);
+  const phone = blocks.findIndex(({ prelude }) => phoneQuery.test(prelude));
+  const after = blocks.slice(phone + 1).filter(({ prelude }) => !prelude.startsWith('@')).map(({ prelude }) => prelude);
+  assert.deepEqual(after, [], 'base rules belong above the phone block');
+});
+
+test('the wide-screen picker block is the exact complement of the phone block, so no viewport width gets neither', () => {
+  const css = read('app.css');
+  const wide = atBlocks(css, /^@media\s+not\s+all\s+and\s*\(\s*max-width\s*:\s*600px\s*\)\s*$/);
+  assert.equal(wide.length, 1);
+  assert.ok(wide[0].includes('#measure-page .dog-picker') && wide[0].includes('.history-toolbar .history-dog-picker'));
+  // min-width:601px (or 600.02px) leaves fractional widths such as 600.5px, seen at desktop zoom, uncovered.
+  assert.ok(!/min-width\s*:\s*60[01](?:\.\d+)?px/.test(stripComments(css)), 'use the negated phone query, not a min-width just above 600px');
 });
 
 test('an update notice shown mid-count on a phone is visually hidden, not removed, so the circle clears the pinned controls', () => {
