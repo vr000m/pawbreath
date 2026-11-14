@@ -63,3 +63,13 @@ test('phone layout: SVG tab icons, History controls in one toolbar, Export CSV b
   assert.ok(settings.includes('id="csv-export"') && settings.includes('id="home-screen-card"'));
   assert.ok(!/<p class="small muted">For sleeping readings/.test(html), 'the card keeps one instruction line');
 });
+
+test('installed mode hides only the install steps; the offline status stays visible', () => {
+  const html = readFileSync(new URL('../dist/index.html', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../dist/app.css', import.meta.url), 'utf8');
+  const card = html.match(/<section class="settings-card" id="home-screen-card">([\s\S]*?)<\/section>/)[1];
+  assert.equal((card.match(/<p class="install-steps">/g) ?? []).length, 2, 'both platform instructions are install steps');
+  assert.ok(/<p class="small muted" id="cache-status">/.test(card), 'the offline status is not an install step');
+  const standalone = css.match(/@media\(display-mode:standalone\)\s*\{([\s\S]*?)\n\}/)[1];
+  assert.ok(standalone.includes('.install-steps') && !standalone.includes('#home-screen-card'), 'the whole card must not be hidden');
+});

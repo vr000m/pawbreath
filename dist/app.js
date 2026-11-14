@@ -602,7 +602,8 @@ $('#dog-form').onsubmit = async event => {
     threshold: value ? Number(value) : null, photo };
   try {
     await saveDog(db, entry);
-    chooseDog(entry.id);
+    // Adding a dog is a choice worth remembering; editing one from Settings only follows it for this session.
+    if (editId) selectedId = entry.id; else chooseDog(entry.id);
     $('#dog-dialog').close();
     await refreshAfterWrite();
     notifyChange();

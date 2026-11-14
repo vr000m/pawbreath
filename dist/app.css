@@ -176,10 +176,6 @@ nav button {
   font-size:14px;
 }
 
-nav button span {
-  margin-right:6px;
-}
-
 nav button[aria-current=page] {
   background:#e6eddf;
   color:var(--green);
@@ -906,11 +902,6 @@ dialog label {
     padding:6px;
     font-size:11px;
   }
-  nav button span {
-    display:block;
-    font-size:19px;
-    margin:0 0 2px;
-  }
   main {
     margin:0 20px;
     padding-top:30px;
@@ -1068,12 +1059,6 @@ dialog label {
 .history-context-filter select { width:100%; max-width:380px; }
 .history-context-filter p { max-width:65ch; }
 
-.history-dog-picker {
-  padding-top:0;
-  margin:-14px 0 22px;
-  max-width:290px;
-}
-
 /* Tab icons are inline SVG so they look the same on iOS and Android. */
 nav button svg {
   width:20px;
@@ -1162,8 +1147,9 @@ nav button[aria-current=page] svg .knob {
     padding-top:12px;
   }
   .breath-circle {
-    width:clamp(150px,27vh,225px);
-    height:clamp(150px,27vh,225px);
+    /* dvh, not vh: on a phone vh counts the area behind the browser toolbars, so the circle would crowd the sticky Start button. */
+    width:clamp(150px,27dvh,225px);
+    height:clamp(150px,27dvh,225px);
     margin-top:12px;
     margin-bottom:6px;
   }
@@ -1182,9 +1168,15 @@ nav button[aria-current=page] svg .knob {
   .text-button {
     min-height:44px;
   }
-  /* Mid-count the title is dead weight; give the tap target the room (the dog picker stays). */
+  /* Mid-count the title is dead weight; give the tap target the room (the dog picker stays). Visually hidden, not display:none, so screen readers keep the page heading. */
   #measure-page:has(.breath-circle.active) h1 {
-    display:none;
+    position:absolute;
+    width:1px;
+    height:1px;
+    margin:-1px;
+    overflow:hidden;
+    clip-path:inset(50%);
+    white-space:nowrap;
   }
   .history-toolbar {
     display:grid;
@@ -1209,9 +1201,9 @@ nav button[aria-current=page] svg .knob {
   }
 }
 
-/* Once installed, the install instructions are noise. */
+/* Once installed, the install instructions are noise. The offline status in the same card is not. */
 @media(display-mode:standalone) {
-  #home-screen-card {
+  .install-steps {
     display:none;
   }
 }

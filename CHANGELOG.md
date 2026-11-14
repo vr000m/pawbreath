@@ -10,7 +10,8 @@ User-visible changes are recorded here. Unreleased changes have not been deploye
 - The app opens on the dog you last chose, otherwise the dog with the newest reading, instead of the first dog alphabetically.
 - Export CSV moved from History to Settings, next to the backup buttons, because it exports every dog.
 - Tab bar uses drawn icons instead of text symbols, so they match on iPhone and Android.
-- The manual-entry dialog keeps Save and Cancel visible while the form scrolls; the install instructions are hidden once the app is installed.
+- The manual-entry dialog keeps Save and Cancel visible while the form scrolls; the install steps are hidden once the app is installed, while the offline status stays.
+- The note about waiting for settled sleep before a sleeping reading moved from the counter card into "Understanding a breathing reading".
 
 ### Fixed
 
