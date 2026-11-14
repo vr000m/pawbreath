@@ -95,6 +95,7 @@ label {
   margin-bottom:9px;
 }
 
+/* 16px: iOS Safari zooms the page when a smaller form control is focused. */
 select {
   font-size:16px;
 }
@@ -234,7 +235,10 @@ h1 {
   margin-bottom:0;
 }
 
+/* One picker shape everywhere: the label spans the row, the select and "+ Add a dog" share the line below.
+   Media queries set only the column widths and spacing. */
 .dog-picker {
+  display:grid;
   min-width:218px;
   max-width:290px;
   padding-top:26px;
@@ -243,17 +247,18 @@ h1 {
 .dog-picker select {
   width:100%;
   background:#fff;
-  font-size:16px;
 }
 
 .dog-picker label {
+  grid-column:1/-1;
   font-size:12px;
   color:var(--muted);
   font-weight:500;
 }
 
 .dog-picker .text-button {
-  padding-left:0;
+  align-self:center;
+  padding-left:6px;
   font-size:12px;
 }
 
@@ -866,174 +871,6 @@ dialog label {
   }
 }
 
-@media(max-width:600px) {
-  .topbar {
-    height:72px;
-    padding:0 22px;
-  }
-  .brand {
-    font-size:25px;
-  }
-  .brand img {
-    width:32px;
-    height:32px;
-  }
-  .connection {
-    display:block;
-    font-size:10px;
-  }
-  nav {
-    position:fixed;
-    bottom:0;
-    left:0;
-    right:0;
-    height:calc(68px + env(safe-area-inset-bottom));
-    padding:7px 15px calc(7px + env(safe-area-inset-bottom));
-    background:#fbfcf7f5;
-    border-top:1px solid var(--line);
-    backdrop-filter:blur(14px);
-    z-index:4;
-    justify-content:space-around;
-    gap:6px;
-  }
-  nav button {
-    flex:1;
-    border-radius:13px;
-    padding:6px;
-    font-size:11px;
-  }
-  main {
-    margin:0 20px;
-    padding-top:30px;
-    padding-bottom:85px;
-  }
-  .page-heading {
-    display:block;
-    margin-bottom:24px;
-  }
-  .eyebrow {
-    font-size:9px;
-    letter-spacing:1.8px;
-    margin-bottom:12px;
-  }
-  h1 {
-    font-size:42px;
-    letter-spacing:-1.6px;
-    margin-bottom:13px;
-  }
-  .subtitle {
-    font-size:13px;
-    max-width:290px;
-  }
-  .dog-picker {
-    display:grid;
-    grid-template-columns:1fr auto;
-    gap:0 12px;
-    max-width:none;
-    width:100%;
-    padding-top:25px;
-  }
-  .dog-picker label {
-    grid-column:1/-1;
-    font-size:12px;
-    margin-bottom:7px;
-  }
-  .dog-picker .text-button {
-    align-self:center;
-    padding-left:6px;
-  }
-  /* 16px: iOS Safari zooms the page when a smaller form control is focused. */
-  .dog-picker select {
-    font-size:16px;
-  }
-  .measure-grid {
-    grid-template-columns:1fr;
-    gap:18px;
-  }
-  .counter-card {
-    padding:21px 19px;
-    border-radius:19px;
-  }
-  .card-top h2 {
-    font-size:14px;
-  }
-  .card-top {
-    gap:8px;
-    flex-wrap:nowrap;
-  }
-  .segments button {
-    padding:7px 10px;
-    font-size:11px;
-  }
-  .counter-card>p {
-    font-size:12px;
-  }
-  .breath-circle {
-    width:225px;
-    height:225px;
-    margin-top:23px;
-    margin-bottom:15px;
-  }
-  .counter-controls {
-    margin-top:20px;
-  }
-  .side-column {
-    gap:16px;
-  }
-  .companion-card {
-    display:none;
-  }
-  .last-card {
-    padding:18px 22px;
-  }
-  .count-tip {
-    padding:0 5px;
-  }
-  .page-heading>.secondary {
-    margin-top:20px;
-  }
-  .chart-card {
-    padding:20px 16px;
-  }
-  .chart-card .card-top {
-    flex-wrap:wrap;
-  }
-  .chart-card canvas {
-    height:215px;
-  }
-  .settings-grid {
-    grid-template-columns:1fr;
-  }
-  .settings-card {
-    padding:24px;
-  }
-  .toast {
-    bottom:calc(85px + env(safe-area-inset-bottom));
-  }
-  footer {
-    margin-top:30px;
-    font-size:12px;
-  }
-  .reading-row {
-    gap:8px;
-  }
-  .reading-row time {
-    font-size:12px;
-  }
-  .reading-row .reading-value {
-    font-size:28px;
-  }
-  .reading-row p {
-    font-size:12px;
-  }
-  dialog {
-    padding:23px;
-  }
-  #confirm-message {
-    font-size:14px;
-  }
-}
-
 @media(prefers-reduced-motion:reduce) {
   * {
     transition:none!important;
@@ -1114,8 +951,50 @@ nav button[aria-current=page] svg .knob {
   white-space:nowrap;
 }
 
-/* Measure and History lead with the task on a phone: compact titles, Start counting in the thumb zone. */
+/* Phone layout. Every phone rule lives in this one block so each property has a single phone value.
+   Measure and History lead with the task: compact titles, Start counting in the thumb zone. */
 @media(max-width:600px) {
+  :root {
+    /* Shared by the fixed tab bar and the sticky counter controls that sit on top of it. */
+    --nav-h:68px;
+    /* Shared by the dialog and the manual form's sticky Save/Cancel bar that bleeds to its edges. */
+    --dialog-pad:23px;
+  }
+  .topbar {
+    height:72px;
+    padding:0 22px;
+  }
+  .brand {
+    font-size:25px;
+  }
+  .brand img {
+    width:32px;
+    height:32px;
+  }
+  .connection {
+    display:block;
+    font-size:10px;
+  }
+  nav {
+    position:fixed;
+    bottom:0;
+    left:0;
+    right:0;
+    height:calc(var(--nav-h) + env(safe-area-inset-bottom));
+    padding:7px 15px calc(7px + env(safe-area-inset-bottom));
+    background:#fbfcf7f5;
+    border-top:1px solid var(--line);
+    backdrop-filter:blur(14px);
+    z-index:4;
+    justify-content:space-around;
+    gap:6px;
+  }
+  nav button {
+    flex:1;
+    border-radius:13px;
+    padding:6px;
+    font-size:11px;
+  }
   nav button svg {
     display:block;
     width:23px;
@@ -1123,7 +1002,27 @@ nav button[aria-current=page] svg .knob {
     margin:0 auto 3px;
   }
   main {
+    margin:0 20px;
     padding-top:16px;
+    padding-bottom:85px;
+  }
+  .page-heading {
+    display:block;
+    margin-bottom:24px;
+  }
+  .eyebrow {
+    font-size:9px;
+    letter-spacing:1.8px;
+    margin-bottom:12px;
+  }
+  h1 {
+    font-size:42px;
+    letter-spacing:-1.6px;
+    margin-bottom:13px;
+  }
+  .subtitle {
+    font-size:13px;
+    max-width:290px;
   }
   /* The picker right below names the dog, so History does not need its own subtitle on a phone. */
   #measure-page .eyebrow, #measure-page .subtitle, #history-page .eyebrow, #history-page .subtitle {
@@ -1137,8 +1036,56 @@ nav button[aria-current=page] svg .knob {
     letter-spacing:-1px;
     margin-bottom:0;
   }
+  /* Mid-count the title is dead weight; give the tap target the room (the dog picker stays). The update
+     notice is held back the same way: shown mid-count it would push the circle under the pinned Undo/Cancel
+     bar. Visually hidden, not display:none, so screen readers keep the heading and still hear the notice,
+     and both come back when the count ends. */
+  #measure-page:has(.breath-circle.active) h1,
+  main:has(.breath-circle.active) #update-notice {
+    position:absolute;
+    width:1px;
+    height:1px;
+    margin:-1px;
+    padding:0;
+    border:0;
+    overflow:hidden;
+    clip-path:inset(50%);
+    white-space:nowrap;
+  }
+  .dog-picker {
+    grid-template-columns:1fr auto;
+    gap:0 12px;
+    max-width:none;
+    width:100%;
+    padding-top:25px;
+  }
+  .dog-picker label {
+    margin-bottom:7px;
+  }
   #measure-page .dog-picker {
     padding-top:12px;
+  }
+  .measure-grid {
+    grid-template-columns:1fr;
+    gap:18px;
+  }
+  .counter-card {
+    padding:21px 19px;
+    border-radius:19px;
+  }
+  .card-top h2 {
+    font-size:14px;
+  }
+  .card-top {
+    gap:8px;
+    flex-wrap:nowrap;
+  }
+  .segments button {
+    padding:7px 10px;
+    font-size:11px;
+  }
+  .counter-card>p {
+    font-size:12px;
   }
   .breath-circle {
     /* dvh, not vh: on a phone vh counts the area behind the browser toolbars, so the circle would crowd the sticky Start button. */
@@ -1149,7 +1096,7 @@ nav button[aria-current=page] svg .knob {
   }
   .counter-controls {
     position:sticky;
-    bottom:calc(76px + env(safe-area-inset-bottom));
+    bottom:calc(var(--nav-h) + 8px + env(safe-area-inset-bottom));
     z-index:2;
     margin-top:12px;
     padding:14px 0 6px;
@@ -1162,15 +1109,20 @@ nav button[aria-current=page] svg .knob {
   .text-button {
     min-height:44px;
   }
-  /* Mid-count the title is dead weight; give the tap target the room (the dog picker stays). Visually hidden, not display:none, so screen readers keep the page heading. */
-  #measure-page:has(.breath-circle.active) h1 {
-    position:absolute;
-    width:1px;
-    height:1px;
-    margin:-1px;
-    overflow:hidden;
-    clip-path:inset(50%);
-    white-space:nowrap;
+  .side-column {
+    gap:16px;
+  }
+  .companion-card {
+    display:none;
+  }
+  .last-card {
+    padding:18px 22px;
+  }
+  .count-tip {
+    padding:0 5px;
+  }
+  .page-heading>.secondary {
+    margin-top:20px;
   }
   .history-toolbar {
     display:grid;
@@ -1185,12 +1137,52 @@ nav button[aria-current=page] svg .knob {
   .history-toolbar .dog-picker label {
     margin-bottom:5px;
   }
+  .chart-card {
+    padding:20px 16px;
+  }
+  .chart-card .card-top {
+    flex-wrap:wrap;
+  }
+  .chart-card canvas {
+    height:215px;
+  }
+  .settings-grid {
+    grid-template-columns:1fr;
+  }
+  .settings-card {
+    padding:24px;
+  }
+  .toast {
+    bottom:calc(85px + env(safe-area-inset-bottom));
+  }
+  footer {
+    margin-top:30px;
+    font-size:12px;
+  }
+  .reading-row {
+    gap:8px;
+  }
+  .reading-row time {
+    font-size:12px;
+  }
+  .reading-row .reading-value {
+    font-size:28px;
+  }
+  .reading-row p {
+    font-size:12px;
+  }
+  dialog {
+    padding:var(--dialog-pad);
+  }
+  #confirm-message {
+    font-size:14px;
+  }
   /* The manual form is taller than a phone: keep Save and Cancel reachable. */
   #manual-form .actions {
     position:sticky;
-    bottom:-23px;
-    margin:12px -23px -23px;
-    padding:12px 23px calc(14px + env(safe-area-inset-bottom));
+    bottom:calc(-1 * var(--dialog-pad));
+    margin:12px calc(-1 * var(--dialog-pad)) calc(-1 * var(--dialog-pad));
+    padding:12px var(--dialog-pad) calc(14px + env(safe-area-inset-bottom));
     background:#fffefa;
     border-top:1px solid var(--line);
   }
@@ -1203,7 +1195,7 @@ nav button[aria-current=page] svg .knob {
   }
 }
 
-/* Short phones (about 600px of visible height or less): mid-count, drop the duration picker and the
+/* Short phones (about 640px of visible height or less): mid-count, drop the duration picker and the
    instruction line so the whole circle clears the pinned Undo/Cancel bar. */
 @media(max-width:600px) and (max-height:640px) {
   #measure-page:has(.breath-circle.active) .counter-card .card-top,
@@ -1219,7 +1211,6 @@ nav button[aria-current=page] svg .knob {
     display:block;
   }
   #measure-page .dog-picker {
-    display:grid;
     grid-template-columns:260px max-content;
     justify-content:start;
     align-items:end;
@@ -1230,12 +1221,7 @@ nav button[aria-current=page] svg .knob {
     margin-top:26px;
   }
   #measure-page .dog-picker label {
-    grid-column:1/-1;
     margin-bottom:6px;
-  }
-  #measure-page .dog-picker .text-button {
-    align-self:center;
-    padding-left:6px;
   }
   .history-toolbar {
     justify-content:flex-start;

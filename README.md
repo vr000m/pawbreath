@@ -18,7 +18,7 @@ The cached breathing guidance explains measurement context and when to seek vete
 
 ## Storage and backups
 
-Data stays in IndexedDB on this device/browser and hostname. Clearing browser data or losing the device can lose the journal. Download JSON backups from Settings regularly. Export CSV sits beside them in Settings; CSV exports include all dogs and readings with UTC timestamps, regardless of History filters.
+Data stays in IndexedDB on this device/browser and hostname. The last-chosen dog is remembered per browser; readings stay in IndexedDB only. Clearing browser data or losing the device can lose the journal. Download JSON backups from Settings regularly. Export CSV sits beside them in Settings; CSV exports include all dogs and readings with UTC timestamps, regardless of History filters.
 
 Restore validates the complete backup and adds missing records in one transaction, preserving existing records with matching IDs. A previous backup can recover deleted readings. Export and restore share validation rules and have no fixed aggregate size/count limit; browser resources still limit capacity.
 
