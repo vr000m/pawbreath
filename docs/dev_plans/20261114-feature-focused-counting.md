@@ -26,7 +26,7 @@ A user reported missed counts while watching their dog. The cause on that device
 ### Phase 1: Dedicated view and sound
 
 - Move the existing counter card into a native dialog on Start and restore it using a fixed original anchor on every exit. Open failure must restore idle state. Cancel handling must use the existing cancellation path without leaving an active session hidden.
-- Give the modal its own specific layout rules while preserving the existing base-before-responsive source order: safe-area padding, flexible target with 150px minimum height, static controls with a visible gap, no background interaction. Normal page overflow handles extreme text/zoom; primary profiles show the target and controls together.
+- Give the modal its own specific layout rules while preserving the existing base-before-responsive source order: safe-area padding, flexible target with 150px minimum height, static controls with a visible gap, no background interaction. The dialog scrolls when text size or zoom makes its content taller than the viewport; primary profiles show the target and controls together.
 - Add an opt-in checkbox outside the active view and a small testable audio helper. Audio attempts are independent of count state and cannot mutate a future session after cancellation. Release node connections after each tone; reuse one context per page.
 
 ### Phase 2: Verify and document
@@ -43,7 +43,7 @@ Explore verified the shared button and controls in `dist/index.html:38–48`, co
 
 Modify `dist/index.html`, `dist/app.css`, `dist/app.js`, `dist/sw.js` (asset list), `tests/browser-check.mjs`, and only affected layout assertions in `tests/structure.test.mjs`. Add `dist/tap-sound.mjs` and `tests/tap-sound.test.mjs`; regenerate `dist/version.mjs`, `dist/release.json` and worker digests. Update `README.md`, `CHANGELOG.md`, this plan and the materially superseded decision in the preceding counting plan. Explore facts are contract inputs; correcting them requires re-review.
 
- This is one browser UI feature: Web Audio is an optional browser facility, not an independently implemented service. The service worker changes only to cache the new helper and regenerate identity.
+This is one browser UI feature: Web Audio is an optional browser facility, not an independently implemented service. The service worker changes only to cache the new helper and regenerate identity.
 
 ## Testing notes
 
@@ -60,7 +60,7 @@ Exactly one increment per accepted activation; no pointer/click double counting;
 - Offline app loads the audio helper and retains journal data. Sound failure leaves all recording behavior intact.
 - Docs distinguish current unshipped work, older deployed UI and pending physical acceptance. No deployment.
 
-<!-- reviewed: 2026-11-14 @ d8d63a6294e86352a99bed3384d2640f3b0d1433 -->
+<!-- reviewed: 2026-11-14 @ 6f8f10552e38850cd3849c64e6e6474cf3b7c48b -->
 
 ## Progress
 
