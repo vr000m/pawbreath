@@ -40,6 +40,12 @@ const channel = 'BroadcastChannel' in window ? new BroadcastChannel('pawbreath-u
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 let replayState = null;
 let chartPoints = [];
+// What History last rendered: replay and chart hit-testing use this list, not a fresh filter at click time,
+// so the controls always act on the readings the person can see and that were validated as replayable.
+let visibleReadings = [];
+let replayIds = new Set();
+// The ring last painted on the chart; frames that would repaint the identical image are skipped.
+let drawnRing = null;
 const chartBackground = document.createElement('canvas');
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const replay = createReplayController({ onFrame: renderReplay, onEnd: () => stopReplay('Replay finished.') });
@@ -48,9 +54,13 @@ function stopReplay(message = 'Replay stopped.') {
   replay.stop();
   if (!replayState) return;
   replayState = null;
+  const stop = $('#replay-stop');
+  // A disabled Stop button must not strand keyboard and screen-reader focus.
+  const refocus = document.activeElement === stop && !document.hidden && !$('#replay-all').disabled;
   $('#replay-status').textContent = message;
   $('#replay-detail').hidden = true;
-  $('#replay-stop').disabled = true;
+  stop.disabled = true;
+  if (refocus) $('#replay-all').focus({ preventScroll: true });
   for (const row of $$('.reading-row')) row.classList.remove('replaying');
   drawReplayPoint();
 }
@@ -67,14 +77,16 @@ function startReplay(entries) {
 function renderReplay(state) {
   const changed = replayState?.entry.id !== state.entry.id;
   replayState = state;
-  $('#replay-stop').disabled = false;
-  $('#replay-detail').hidden = false;
   if (changed) {
+    $('#replay-stop').disabled = false;
+    $('#replay-detail').hidden = false;
     $('#replay-status').textContent = `Replaying ${dateFormat.format(new Date(state.entry.date))} · ${state.index + 1} of ${state.total}.`;
     for (const row of $$('.reading-row')) row.classList.toggle('replaying', row.dataset.readingId === state.entry.id);
     drawTapTimeline();
   }
-  $('#replay-progress').textContent = `${Math.floor(state.elapsedMs / 1000)} / ${state.entry.seconds} seconds · ${state.tapCount} / ${state.entry.count} recorded taps`;
+  // Frames arrive every display refresh; the text changes at most once a second or per tap.
+  const progress = `${Math.floor(state.elapsedMs / 1000)} / ${state.entry.seconds} seconds · ${state.tapCount} / ${state.entry.count} recorded taps`;
+  if ($('#replay-progress').textContent !== progress) $('#replay-progress').textContent = progress;
   drawReplayPoint();
 }
 
@@ -82,15 +94,18 @@ function renderReplay(state) {
 function drawReplayPoint() {
   const canvas = $('#history-chart');
   if (page !== 'history' || canvas.hidden || !chartBackground.width) return;
+  const point = replayState && chartPoints.find(point => point.entry.id === replayState.entry.id);
+  const pulse = point && !reducedMotion.matches ? Math.max(0, 1 - replayState.pulseAgeMs / 240) : 0;
+  const ring = point ? `${point.entry.id}|${point.x}|${point.y}|${pulse}` : '';
+  if (ring === drawnRing) return;
+  drawnRing = ring;
   const ctx = canvas.getContext('2d');
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(chartBackground, 0, 0);
-  const point = chartPoints.find(point => point.entry.id === replayState?.entry.id);
   if (!point) return;
   const scale = window.devicePixelRatio || 1;
   ctx.scale(scale, scale);
-  const pulse = reducedMotion.matches ? 0 : Math.max(0, 1 - replayState.pulseAgeMs / 240);
   ctx.strokeStyle = '#42745a'; ctx.lineWidth = 2; ctx.globalAlpha = 0.35;
   ctx.beginPath(); ctx.arc(point.x, point.y, 7 + pulse * 5, 0, Math.PI * 2); ctx.stroke();
   ctx.globalAlpha = 1;
@@ -114,14 +129,15 @@ function drawTapTimeline() {
   canvas.setAttribute('aria-label', `${entry.count} recorded taps across ${entry.seconds} seconds. Each vertical mark is an accepted tap; gaps show time between taps.`);
 }
 
-$('#replay-all').onclick = () => startReplay(filteredReadings());
+$('#replay-all').onclick = () => startReplay(visibleReadings);
 $('#replay-stop').onclick = () => stopReplay();
 $('#history-chart').onclick = event => {
   const rect = event.currentTarget.getBoundingClientRect();
   const x = event.clientX - rect.left, y = event.clientY - rect.top;
   const point = chartPoints.map(point => ({ ...point, distance: Math.hypot(point.x - x, point.y - y) }))
     .filter(point => point.distance <= 14)
-    .sort((a, b) => a.distance - b.distance || b.entry.date.localeCompare(a.entry.date) || a.entry.id.localeCompare(b.entry.id))[0];
+    .sort((a, b) => a.distance - b.distance || b.entry.date.localeCompare(a.entry.date) ||
+      (a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0))[0];
   if (point) startReplay([point.entry]);
 };
 reducedMotion.addEventListener('change', () => { if (replayState) drawReplayPoint(); });
@@ -274,7 +290,8 @@ function renderHistory() {
   chartPoints = [];
   $('#history-dog').textContent = dog() ? `${dog().name}'s breathing journal.` : 'Add a dog and save your first reading.';
   const entries = filteredReadings();
-  const replayIds = new Set(replayableReadings(entries).map(entry => entry.id));
+  visibleReadings = entries;
+  replayIds = new Set(replayableReadings(entries).map(entry => entry.id));
   $('#replay-all').disabled = replayIds.size === 0;
   $('#reading-total').textContent = `${entries.length} ${entries.length === 1 ? 'reading' : 'readings'}`;
   $('#chart-empty').hidden = entries.length > 0;
@@ -343,6 +360,7 @@ function renderHistory() {
 
 function drawChart() {
   chartPoints = [];
+  drawnRing = null;
   const canvas = $('#history-chart');
   const entries = [...filteredReadings()].reverse();
   if (!entries.length || canvas.hidden || page !== 'history') return;
@@ -380,7 +398,7 @@ function drawChart() {
   ctx.stroke();
   for (const entry of entries) {
     ctx.fillStyle = '#42745a'; ctx.beginPath(); ctx.arc(x(entry.date), y(entry.rate), 4, 0, Math.PI * 2); ctx.fill();
-    if (entry.tapOffsetsMs) chartPoints.push({ entry, x: x(entry.date), y: y(entry.rate) });
+    if (replayIds.has(entry.id)) chartPoints.push({ entry, x: x(entry.date), y: y(entry.rate) });
   }
   const label = timestamp => new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(timestamp));
   ctx.fillStyle = '#71806a'; ctx.textAlign = 'left'; ctx.fillText(label(start), left, height - 8);

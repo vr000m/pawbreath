@@ -1,5 +1,7 @@
 export const FORMAT = 'pawbreath';
 export const VERSION = 3;
+// The first backup format that may carry recorded tap timing. Later formats keep accepting it.
+const TIMING_VERSION = 3;
 // The single definition of measurement contexts. `label` is the form option, `filter` the History
 // filter option and `short` the History/latest-reading description. Order is the form order.
 export const CONTEXT_LABELS = Object.freeze({
@@ -133,7 +135,7 @@ export function validateBackup(input) {
   requireValue(Array.isArray(input.dogs) && Array.isArray(input.readings), 'This backup is incomplete.');
   const dogs = input.dogs.map(validateDog);
   const readings = input.readings.map(reading => {
-    requireValue(input.version === VERSION || !reading || !('tapOffsetsMs' in Object(reading)),
+    requireValue(input.version >= TIMING_VERSION || !reading || !('tapOffsetsMs' in Object(reading)),
       'Recorded tap timing requires a version 3 backup.');
     return validateReading(reading);
   });

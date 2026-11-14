@@ -436,12 +436,20 @@ await check('History replays individual points and visible readings newest first
     {...record,id:'replay-manual',dogId:replayDog.id,source:'manual',count:null,seconds:null,rate:23},
   ];
   for (const r of fixtures) await saveReading(db,r);
+  // A stored trace that fails validation (written around the validator) is untimed: no control, no chart hit target.
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('readings', 'readwrite');
+    tx.objectStore('readings').put({...base,id:'replay-bad',date:'2020-01-02T12:00:00.000Z',tapOffsetsMs:[1]});
+    tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+  });
   selectedId = replayDog.id; await refresh(); setRange('all'); setHistoryContext('all'); showPage('history');
   await sleep(40);
   const before = JSON.stringify(await readAll(db));
   let sounds = 0; const playSound = tapSound.play; tapSound.play = () => sounds++;
   try {
     assert(document.querySelectorAll('.replay-reading').length === 3, 'Unavailable readings acquired replay controls');
+    drawChart();
+    assert(chartPoints.length === 3 && !chartPoints.some(p=>p.entry.id==='replay-bad'), 'Chart offered a point that cannot replay');
     assert($('#reading-list').textContent.includes('Tap timing unavailable'), 'Untimed status missing');
     const row = id => [...document.querySelectorAll('.reading-row')].find(r=>r.dataset.readingId===id);
     row('replay-old').querySelector('.replay-reading').click();
@@ -502,6 +510,7 @@ await check('History replays individual points and visible readings newest first
     }
   } finally {
     tapSound.play = playSound; stopReplay(); selectedId=originalDog; fakeNow=originalNow;
+    await deleteReading(db,'replay-bad');
     setRange('all'); setHistoryContext('all'); await refresh(); showPage('measure');
   }
 });

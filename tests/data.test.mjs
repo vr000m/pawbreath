@@ -39,7 +39,8 @@ test('format 3 preserves traces; versions 1 and 2 stay untimed and cannot smuggl
   assert.deepEqual(validateBackup(JSON.parse(JSON.stringify(exported))), input);
   traced.tapOffsetsMs[0] = 4;
   assert.equal(exported.readings[0].tapOffsetsMs[0], 3);
-  assert.equal(toCsv(input), toCsv({ ...input, readings: [{ ...traced, tapOffsetsMs: undefined }] }));
+  const { tapOffsetsMs: _trace, ...untimed } = traced;
+  assert.equal(toCsv(input), toCsv({ ...input, readings: [untimed] }));
   for (const version of [1, 2]) {
     const legacy = { ...backup(), version };
     assert.equal(validateBackup(legacy).version, 3);
