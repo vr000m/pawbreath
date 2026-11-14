@@ -1,6 +1,6 @@
 # Recorded tap timing and History replay
 
-**Status:** In Progress
+**Status:** Implemented and desktop-verified; physical acceptance pending
 **Component:** Pawbreath
 **Assignee:** Codex
 **Priority:** High
@@ -67,11 +67,11 @@ Lossless trace round-trip, count/length parity, strict version boundaries, no fa
 - All cleanup/reduced-motion/resize tests pass and no background callbacks keep playback alive after stopping.
 - Full tests, browser checks and dry run pass; fresh offline reopening preserves replay data. Docs clearly distinguish recorded taps, compatibility constraints and pending physical checks.
 
-<!-- reviewed: 2026-11-14 @ 6b348cbcd8992effc8f0135793779b737487d743 -->
+<!-- reviewed: 2026-11-14 @ e83b491c90bab42452cd176883b83ae6be87325c -->
 
 ## Progress
 
-Exploration and five-lens review plus contradiction pass complete. Three Important findings addressed: call flow, mutation-resistance tests and atomic commit metadata. Implementation pending.
+Exploration and five-lens review plus contradiction pass complete. Three Important findings addressed: call flow, mutation-resistance tests and atomic commit metadata. Capture/persistence, History replay, documentation and desktop verification complete. Physical iPhone acceptance remains pending.
 
 ## Findings
 
@@ -81,6 +81,13 @@ Review: 3 raw / 3 unique / 0 merged / 0 related / 0 dropped; no contradictions. 
 
 A browser cannot render separate pulses for taps closer than a display frame; stored timing remains intact, and late frames must not manufacture a burst.
 
-## Final results
+## Final results — 14 November 2026
 
-Pending.
+Unreleased 1.2.0 build `24ef303881c6`, stacked on Claude's `5266564`. No deployment, merge, push or PR mutation.
+
+- `npm test` and `just deploy-check`: 81 tests pass; metadata/syntax checks and Wrangler dry run pass. Browser harness: 26 checks pass, including save/restore timing equality, save failure/retry, caller mutation, per-point and newest-first replay, same-date points, context/export separation, resize, reduced motion and all cancellation paths.
+- Real Chromium touch profiles at 390×844 and 440×956: a service-worker upgrade from 1.1.0 build `6379aad6d342` waits while a count/form is active. After closure, 1.2.0 retains the exact old journal. New recordings retain offsets including Undo, and replay after an offline reload. No browser errors; no horizontal overflow; replay controls are at least 44px tall. Screenshots inspected. These are emulations, not physical Safari checks.
+- Invariant audit: the sole accepted-click path pushes one elapsed offset and derives count from array length; Undo pops and derives the same count. Completion copies the array. Validation copies before asynchronous IndexedDB work. Backup restore and replay both use that validator; the replay snapshot is frozen. A generation token rejects stale callbacks, and frames derive the current clip/tap directly from elapsed time. Only the active point receives a ring; playback never calls `tapSound.play()` or storage writes.
+- Manual code/security/docs audit found no remaining blocking issue. No new dependencies, external destinations or credentials. The worker precaches and verifies the replay module. Rendering reuses a cached chart image instead of sorting/redrawing all history each frame. README/changelog and the baseline recovery correction match format 3 and unreleased status.
+
+Physical checks remain pending on both iPhone 12 and iPhone 17 Pro Max: Safari and installed-app pulse visibility, toolbar/rotation and large text; VoiceOver replay labels/transitions/Stop; reduced-motion behavior; real background/lock cancellation; installed-app upgrade and offline reopening. Original tap accuracy and recording-audio acceptance remain as documented in the focused-counting plan.

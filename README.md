@@ -4,7 +4,7 @@ A mobile-first breathing journal for dogs: timed 30/60-second counts, multiple p
 
 ![Pawbreath measurement screen with a sample Milo profile and latest reading](docs/images/pawbreath-preview.png)
 
-Local preview with sample data. See the [changelog](CHANGELOG.md) for changes and the [development plan](docs/dev_plans/20261112-feature-pawbreath.md) for decisions and verification. The mobile UI improvements are deployed as 1.1.0 build `63316a30696f`. The [focused counting view and device checks](docs/dev_plans/20261114-feature-focused-counting.md) are not yet deployed; physical checks on iPhone 12 and iPhone 17 Pro Max remain pending.
+Local preview with sample data. See the [changelog](CHANGELOG.md) for changes and the [development plan](docs/dev_plans/20261112-feature-pawbreath.md) for decisions and verification. The mobile UI improvements are deployed as 1.1.0 build `63316a30696f`. The [focused counting view and device checks](docs/dev_plans/20261114-feature-focused-counting.md) are not yet deployed; physical checks on iPhone 12 and iPhone 17 Pro Max remain pending. [Recorded tap replay](docs/dev_plans/20261114-feature-breath-timing-replay.md) is implemented in unreleased 1.2.0.
 
 ## Install and use
 
@@ -15,6 +15,8 @@ Add a dog, wait until they are settled or asleep, and start a count. Start opens
 Enable **Quiet tap sound** before starting for optional feedback. Ticking it checks whether this device can play audio: the status line says **Tap sound on** only when audio is running, otherwise “Tap sound is not available on this device” and the box unticks. It is off on page load and stays selected across counts until reload. If audio is interrupted mid-count (for example by a call), later taps try to restore it. Device volume or mute settings can still silence it; counting works without sound.
 
 Readings can be labelled asleep, resting, restless or context not recorded, with an optional uncertainty flag. History applies date/context filters to both chart and list. Saving an entry clears conflicting filters so it stays visible. Profiles are editable; reading deletion asks for confirmation.
+
+For new timed readings, tap a chart point or **Replay taps** to replay that reading. **Replay newest first** plays visible readings one at a time, newest to oldest. The selected point pulses at the recorded tap times, silently at original speed, including gaps at the start and end of each 30/60-second count. A static timeline shows the taps; reduced motion keeps the point still. Stop, filters, navigation, forms and leaving the app stop playback. Old and manual readings show “Tap timing unavailable”.
 
 The cached breathing guidance explains measurement context and when to seek veterinary advice. Thresholds start blank: enter the value your vet recommends. The general 30 breaths/min reference never sets that value automatically. The app compares readings against the entered threshold without diagnosing a condition. External source links require connectivity.
 
@@ -54,7 +56,7 @@ just deploy-check   # Tests and Wrangler dry run; does not deploy
 
 Open the browser harness's printed file to run its checks. It uses an isolated database and simulated worker registration. Actual worker upgrades require a served test; iPhone installation and lifecycle checks require the device.
 
-`package.json` owns the release version. To change it, use `npm version 1.1.1 --no-git-tag-version` with the intended version. Run `npm run release` after final app edits, then commit the changed source, package/lockfile and generated `dist/version.mjs`, `dist/release.json` and `dist/sw.js`. Tests reject stale metadata. App, backup and database versions are independent.
+`package.json` owns the release version. To change it, use `npm version 1.2.1 --no-git-tag-version` with the intended version. Run `npm run release` after final app edits, then commit the changed source, package/lockfile and generated `dist/version.mjs`, `dist/release.json` and `dist/sw.js`. Tests reject stale metadata. App, backup and database versions are independent.
 
 ## Deploy to Cloudflare
 

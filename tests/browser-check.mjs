@@ -22,6 +22,9 @@ app = replaced(app, 'const updates = createUpdateMonitor({ storage: updateStorag
 app = replaced(app, '  prepareOffline();', "  $('#cache-status').textContent = 'Offline installation is excluded from the file-based test harness.';");
 app = replaced(app, "import { createTapSound } from './tap-sound.mjs';\n", '');
 const tapSoundSource = replaced(readFileSync(new URL('tap-sound.mjs', dist), 'utf8'), 'export ', '', true);
+app = replaced(app, "import { createReplayController, replayableReadings } from './replay.mjs';\n", '');
+const replaySource = replaced(replaced(readFileSync(new URL('replay.mjs', dist), 'utf8'),
+  "import { validateReading } from './data.mjs';\n", ''), 'export ', '', true);
 const checks = `
 const output = document.createElement('pre');
 output.id = 'test-results';
@@ -420,6 +423,88 @@ await check('History context filters chart and list, preserves unknown context a
   await refresh();
   showPage('measure');
 });
+await check('History replays individual points and visible readings newest first without changing data or audio', async () => {
+  const originalDog = selectedId, originalNow = fakeNow;
+  const replayDog = {id:'replay-dog',name:'Replay check',threshold:null,photo:''};
+  await saveDog(db,replayDog);
+  const base = {...record,dogId:replayDog.id,count:3,rate:6,tapOffsetsMs:[1000,4500,12345],context:'asleep'};
+  const fixtures = [
+    {...base,id:'replay-new',date:'2026-11-14T12:00:00.000Z'},
+    {...base,id:'replay-tie',date:'2026-11-14T12:00:00.000Z'},
+    {...base,id:'replay-old',date:'2020-01-01T12:00:00.000Z',context:'resting'},
+    {...record,id:'replay-legacy',dogId:replayDog.id},
+    {...record,id:'replay-manual',dogId:replayDog.id,source:'manual',count:null,seconds:null,rate:23},
+  ];
+  for (const r of fixtures) await saveReading(db,r);
+  selectedId = replayDog.id; await refresh(); setRange('all'); setHistoryContext('all'); showPage('history');
+  await sleep(40);
+  const before = JSON.stringify(await readAll(db));
+  let sounds = 0; const playSound = tapSound.play; tapSound.play = () => sounds++;
+  try {
+    assert(document.querySelectorAll('.replay-reading').length === 3, 'Unavailable readings acquired replay controls');
+    assert($('#reading-list').textContent.includes('Tap timing unavailable'), 'Untimed status missing');
+    const row = id => [...document.querySelectorAll('.reading-row')].find(r=>r.dataset.readingId===id);
+    row('replay-old').querySelector('.replay-reading').click();
+    assert(replayState.entry.id === 'replay-old' && replayState.total === 1 && replayState.tapCount === 0, 'Individual replay wrong');
+    const announcement = $('#replay-status').textContent;
+    fakeNow += 1000; await sleep(40);
+    assert(replayState.tapCount === 1 && $('#replay-status').textContent === announcement, 'Tap changed live announcement');
+    const elapsed = replayState.elapsedMs;
+    window.dispatchEvent(new Event('resize'));
+    assert(replayState.entry.id === 'replay-old' && replayState.elapsedMs === elapsed, 'Resize restarted playback');
+    const radii = [], arc = CanvasRenderingContext2D.prototype.arc;
+    CanvasRenderingContext2D.prototype.arc = function(...args) { radii.push(args[2]); return arc.apply(this,args); };
+    try {
+      Object.defineProperty(reducedMotion,'matches',{configurable:true,value:false}); drawChart();
+      assert(radii.some(r=>r>7), 'Recorded tap did not pulse');
+      radii.length = 0;
+      Object.defineProperty(reducedMotion,'matches',{configurable:true,value:true}); reducedMotion.dispatchEvent(new Event('change'));
+      assert(radii.includes(7) && !radii.some(r=>r>7), 'Reduced motion still pulses');
+    } finally { delete reducedMotion.matches; CanvasRenderingContext2D.prototype.arc = arc; }
+    $('#replay-stop').click(); assert(!replayState && $('#replay-stop').disabled, 'Stop left playback alive');
+    drawChart(); const point = chartPoints.find(p=>p.entry.id==='replay-old');
+    const rect = $('#history-chart').getBoundingClientRect();
+    $('#history-chart').dispatchEvent(new MouseEvent('click',{clientX:rect.left+point.x,clientY:rect.top+point.y}));
+    assert(replayState?.entry.id === 'replay-old', 'Chart point selected the wrong reading');
+    $('#replay-all').click();
+    assert(replayState.entry.id === 'replay-new' && replayState.total === 3, 'Sequence did not start newest eligible first');
+    fakeNow += 29999; await sleep(40);
+    assert(replayState.entry.id === 'replay-new', 'Trailing silence was skipped');
+    fakeNow += 1; await sleep(40);
+    assert(replayState.entry.id === 'replay-tie' && replayState.elapsedMs === 0, 'Tie order or duration wrong');
+    fakeNow += 30000; await sleep(40);
+    assert(replayState.entry.id === 'replay-old', 'Older reading was not next');
+    fakeNow += 30000; await sleep(40);
+    assert(!replayState && $('#replay-status').textContent === 'Replay finished.', 'Sequence failed to finish');
+    $('#history-context').value = 'resting'; $('#history-context').onchange(); $('#replay-all').click();
+    assert(replayState.entry.id === 'replay-old' && replayState.total === 1, 'Sequence ignored context filter');
+    assert(toCsv(snapshot).includes('2026-11-14T12:00:00.000Z'), 'Replay filtering changed export scope');
+    assert(sounds === 0, 'Silent replay used recording audio');
+    assert(JSON.stringify(await readAll(db)) === before, 'Replay modified journal data');
+    const operations = [
+      async()=>document.querySelector('[data-range="7"]').click(),
+      async()=>{ $('#history-context').value='asleep'; $('#history-context').onchange(); },
+      async()=>{ $('#history-dog-select').value=originalDog; $('#history-dog-select').onchange(); },
+      async()=>showPage('settings'),
+      async()=>{ openManual(); assert(!replayState,'Manual form did not stop replay'); finishManual(); },
+      async()=>{ openDog(replayDog.id); assert(!replayState,'Profile form did not stop replay'); $('#dog-dialog').close(); },
+      async()=>{ const result=confirmAction('Test','Test'); assert(!replayState,'Confirmation did not stop replay'); $('#confirm-no').click(); await result; },
+      async()=>{ Object.defineProperty(document,'hidden',{configurable:true,value:true}); document.dispatchEvent(new Event('visibilitychange')); delete document.hidden; },
+      async()=>window.dispatchEvent(new Event('pagehide')),
+      async()=>{ await saveReading(db,{...fixtures[0],notes:'Changed elsewhere'}); await refresh(); },
+      async()=>{ $('#start').click(); assert(!replayState && session,'Starting count did not stop replay'); $('#cancel').click(); },
+    ];
+    for (let i=0;i<operations.length;i++) {
+      selectedId=replayDog.id; setRange('all'); setHistoryContext('all'); showPage('history');
+      $('#replay-all').click(); assert(replayState, 'Cannot start lifecycle case '+i);
+      await operations[i](); await sleep(30);
+      assert(!replayState && $('#replay-stop').disabled, 'Replay survived lifecycle case '+i);
+    }
+  } finally {
+    tapSound.play = playSound; stopReplay(); selectedId=originalDog; fakeNow=originalNow;
+    setRange('all'); setHistoryContext('all'); await refresh(); showPage('measure');
+  }
+});
 await check('Concurrent connections preserve distinct records', async () => {
   const second = await openDatabase();
   await Promise.all([saveReading(db,{...record,id:'concurrent-a'}),saveReading(second,{...record,id:'concurrent-b'})]);
@@ -619,7 +704,7 @@ const updates = replaced(replaced(readFileSync(new URL('updates.mjs', dist), 'ut
   "import { RELEASE } from './version.mjs';\n", ''), 'export ', '', true);
 const workerStub = `const harnessRegistration = Object.assign(new EventTarget(), {active:{}, waiting:null, installing:null, update:async()=>{}});
 const harnessServiceWorker = Object.assign(new EventTarget(), {controller:{}, register:async()=>harnessRegistration, getRegistration:async()=>harnessRegistration});`;
-const script = `window.testRun = crypto.randomUUID();\n(async () => {\n${version}\n${updates}\n${workerStub}\n${data}\n${tapSoundSource}\n${app}\n${checks}\n})().catch(error => { document.title = 'Pawbreath harness failed'; document.body.prepend(Object.assign(document.createElement('pre'), {textContent:error.stack})); });`;
+const script = `window.testRun = crypto.randomUUID();\n(async () => {\n${version}\n${updates}\n${workerStub}\n${data}\n${tapSoundSource}\n${replaySource}\n${app}\n${checks}\n})().catch(error => { document.title = 'Pawbreath harness failed'; document.body.prepend(Object.assign(document.createElement('pre'), {textContent:error.stack})); });`;
 const outputPath = process.argv[2] || '/tmp/pawbreath-browser-check.html';
 let result = replaced(html, '  <script type="module" src="./app.js"></script>', '');
 result = replaced(result, /(src|href)="\.\/([^"#]+)"/g, (_, attr, path) => `${attr}="${new URL(path, dist).href}"`);

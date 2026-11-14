@@ -2,9 +2,11 @@
 
 User-visible changes are recorded here. Unreleased changes have not been deployed.
 
-## Unreleased
+## Unreleased — 1.2.0
 
 ### Added
+
+- History can replay each new timed reading at its recorded tap rhythm, or play visible readings newest first, one at a time. Playback is silent and works offline, with a static timeline, Stop control and reduced-motion support. Old and manual readings remain untimed.
 
 - New timed readings retain individual accepted tap times in milliseconds. Backup format 3 preserves them and imports older formats without inventing timing. App version is now 1.2.0 (unreleased).
 

@@ -3,6 +3,7 @@ import { openDatabase, readAll, saveDog, saveReading, deleteReading, restoreBack
   CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId } from './data.mjs';
 import { createUpdateMonitor } from './updates.mjs';
 import { createTapSound } from './tap-sound.mjs';
+import { createReplayController, replayableReadings } from './replay.mjs';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -37,6 +38,93 @@ let soundCheck = 0;
 let noticeAnnouncement;
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel('pawbreath-updates') : null;
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+let replayState = null;
+let chartPoints = [];
+const chartBackground = document.createElement('canvas');
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const replay = createReplayController({ onFrame: renderReplay, onEnd: () => stopReplay('Replay finished.') });
+
+function stopReplay(message = 'Replay stopped.') {
+  replay.stop();
+  if (!replayState) return;
+  replayState = null;
+  $('#replay-status').textContent = message;
+  $('#replay-detail').hidden = true;
+  $('#replay-stop').disabled = true;
+  for (const row of $$('.reading-row')) row.classList.remove('replaying');
+  drawReplayPoint();
+}
+
+function startReplay(entries) {
+  if (page !== 'history' || document.hidden || session || pending || $$('dialog[open]').length) return;
+  stopReplay();
+  if (replay.start(entries)) {
+    $('#replay-stop').focus({ preventScroll: true });
+    $('#history-chart').scrollIntoView({ block: 'center', behavior: 'instant' });
+  }
+}
+
+function renderReplay(state) {
+  const changed = replayState?.entry.id !== state.entry.id;
+  replayState = state;
+  $('#replay-stop').disabled = false;
+  $('#replay-detail').hidden = false;
+  if (changed) {
+    $('#replay-status').textContent = `Replaying ${dateFormat.format(new Date(state.entry.date))} · ${state.index + 1} of ${state.total}.`;
+    for (const row of $$('.reading-row')) row.classList.toggle('replaying', row.dataset.readingId === state.entry.id);
+    drawTapTimeline();
+  }
+  $('#replay-progress').textContent = `${Math.floor(state.elapsedMs / 1000)} / ${state.entry.seconds} seconds · ${state.tapCount} / ${state.entry.count} recorded taps`;
+  drawReplayPoint();
+}
+
+// Copy the cached chart and paint just its active ring; never re-sort the journal on every frame.
+function drawReplayPoint() {
+  const canvas = $('#history-chart');
+  if (page !== 'history' || canvas.hidden || !chartBackground.width) return;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(chartBackground, 0, 0);
+  const point = chartPoints.find(point => point.entry.id === replayState?.entry.id);
+  if (!point) return;
+  const scale = window.devicePixelRatio || 1;
+  ctx.scale(scale, scale);
+  const pulse = reducedMotion.matches ? 0 : Math.max(0, 1 - replayState.pulseAgeMs / 240);
+  ctx.strokeStyle = '#42745a'; ctx.lineWidth = 2; ctx.globalAlpha = 0.35;
+  ctx.beginPath(); ctx.arc(point.x, point.y, 7 + pulse * 5, 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+function drawTapTimeline() {
+  if (!replayState) return;
+  const { entry } = replayState;
+  const canvas = $('#tap-timeline'), width = canvas.clientWidth, height = 36;
+  const scale = window.devicePixelRatio || 1;
+  canvas.width = width * scale; canvas.height = height * scale;
+  const ctx = canvas.getContext('2d'); ctx.scale(scale, scale);
+  ctx.strokeStyle = '#71806a'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, 24); ctx.lineTo(width, 24); ctx.stroke();
+  ctx.beginPath();
+  for (const offset of entry.tapOffsetsMs) {
+    const x = 1 + offset / (entry.seconds * 1000) * (width - 2);
+    ctx.moveTo(x, 4); ctx.lineTo(x, 24);
+  }
+  ctx.stroke();
+  canvas.setAttribute('aria-label', `${entry.count} recorded taps across ${entry.seconds} seconds. Each vertical mark is an accepted tap; gaps show time between taps.`);
+}
+
+$('#replay-all').onclick = () => startReplay(filteredReadings());
+$('#replay-stop').onclick = () => stopReplay();
+$('#history-chart').onclick = event => {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const x = event.clientX - rect.left, y = event.clientY - rect.top;
+  const point = chartPoints.map(point => ({ ...point, distance: Math.hypot(point.x - x, point.y - y) }))
+    .filter(point => point.distance <= 14)
+    .sort((a, b) => a.distance - b.distance || b.entry.date.localeCompare(a.entry.date) || a.entry.id.localeCompare(b.entry.id))[0];
+  if (point) startReplay([point.entry]);
+};
+reducedMotion.addEventListener('change', () => { if (replayState) drawReplayPoint(); });
 
 function showError(error) {
   $('#error').textContent = error.message || 'Something went wrong. Please try again.';
@@ -77,6 +165,7 @@ function readings() {
 }
 
 function confirmAction(title, message, label = 'Continue') {
+  stopReplay();
   return new Promise(resolve => {
     const dialog = $('#confirm-dialog');
     $('#confirm-title').textContent = title;
@@ -181,8 +270,12 @@ function filteredReadings() {
 }
 
 function renderHistory() {
+  stopReplay();
+  chartPoints = [];
   $('#history-dog').textContent = dog() ? `${dog().name}'s breathing journal.` : 'Add a dog and save your first reading.';
   const entries = filteredReadings();
+  const replayIds = new Set(replayableReadings(entries).map(entry => entry.id));
+  $('#replay-all').disabled = replayIds.size === 0;
   $('#reading-total').textContent = `${entries.length} ${entries.length === 1 ? 'reading' : 'readings'}`;
   $('#chart-empty').hidden = entries.length > 0;
   $('#history-chart').hidden = entries.length === 0;
@@ -195,6 +288,7 @@ function renderHistory() {
   for (const entry of entries) {
     const row = document.createElement('article');
     row.className = 'reading-row';
+    row.dataset.readingId = entry.id;
     const details = document.createElement('div');
     details.className = 'reading-details';
     const date = document.createElement('time');
@@ -204,6 +298,19 @@ function renderHistory() {
     meta.className = 'reading-meta';
     meta.textContent = readingDetails(entry);
     details.append(date, meta);
+    if (replayIds.has(entry.id)) {
+      const play = document.createElement('button');
+      play.className = 'text-button replay-reading';
+      play.textContent = 'Replay taps';
+      play.setAttribute('aria-label', `Replay recorded taps from ${date.textContent}`);
+      play.onclick = () => startReplay([entry]);
+      details.append(play);
+    } else {
+      const unavailable = document.createElement('p');
+      unavailable.className = 'reading-meta';
+      unavailable.textContent = 'Tap timing unavailable';
+      details.append(unavailable);
+    }
     if (entry.notes) {
       const notes = document.createElement('p');
       notes.textContent = entry.notes;
@@ -235,6 +342,7 @@ function renderHistory() {
 }
 
 function drawChart() {
+  chartPoints = [];
   const canvas = $('#history-chart');
   const entries = [...filteredReadings()].reverse();
   if (!entries.length || canvas.hidden || page !== 'history') return;
@@ -272,10 +380,14 @@ function drawChart() {
   ctx.stroke();
   for (const entry of entries) {
     ctx.fillStyle = '#42745a'; ctx.beginPath(); ctx.arc(x(entry.date), y(entry.rate), 4, 0, Math.PI * 2); ctx.fill();
+    if (entry.tapOffsetsMs) chartPoints.push({ entry, x: x(entry.date), y: y(entry.rate) });
   }
   const label = timestamp => new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(timestamp));
   ctx.fillStyle = '#71806a'; ctx.textAlign = 'left'; ctx.fillText(label(start), left, height - 8);
   if (start !== end) { ctx.textAlign = 'right'; ctx.fillText(label(end), right, height - 8); }
+  chartBackground.width = canvas.width; chartBackground.height = canvas.height;
+  chartBackground.getContext('2d').drawImage(canvas, 0, 0);
+  drawReplayPoint();
 }
 
 function setLocked(locked) {
@@ -381,6 +493,7 @@ function tick() {
 
 $('#start').onclick = async () => {
   if (!dog() || session || pending) return;
+  stopReplay();
   $('#error').hidden = true;
   session = { dogId: selectedId, date: new Date().toISOString(), started: performance.now(), seconds: duration, count: 0, tapOffsetsMs: [] };
   setLocked(true);
@@ -453,10 +566,11 @@ countingDialog.addEventListener('close', () => {
   if (!countingDialog.open && session) cancelCount();
 });
 document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopReplay();
   if (document.hidden && session) cancelCount('The count stopped when the app left the screen. Please start a new measurement.');
   if (!document.hidden && db && !session && !pending) refresh().catch(showError);
 });
-window.addEventListener('pagehide', () => { if (session) cancelCount(); });
+window.addEventListener('pagehide', () => { stopReplay(); if (session) cancelCount(); });
 window.addEventListener('beforeunload', event => {
   if (session || pending || saving || (manualDraft && manualDirty)) { event.preventDefault(); event.returnValue = ''; }
 });
@@ -487,6 +601,7 @@ $('#discard').onclick = async () => {
 
 function openManual() {
   if (!db || !dog() || session || pending || saving || manualDraft) return;
+  stopReplay();
   manualDraft = { id: crypto.randomUUID(), dogId: selectedId };
   manualDirty = false;
   $('#manual-form').reset();
@@ -569,6 +684,7 @@ for (const button of $$('[data-duration]')) button.onclick = () => {
 
 function showPage(next) {
   if (session || pending || !['measure', 'history', 'settings'].includes(next)) return;
+  stopReplay();
   page = next;
   for (const section of $$('.page')) section.hidden = section.id !== `${page}-page`;
   for (const button of $$('nav [data-page]')) {
@@ -598,7 +714,7 @@ function revealSavedReading(entry) {
   if (historyContext !== 'all' && historyContext !== entry.context) setHistoryContext('all');
 }
 $('#history-context').onchange = () => { setHistoryContext($('#history-context').value); renderHistory(); };
-window.addEventListener('resize', () => { if (page === 'history') drawChart(); });
+window.addEventListener('resize', () => { if (page === 'history') { drawChart(); drawTapTimeline(); } });
 
 function previewPhoto() {
   $('#photo-preview').hidden = !photo;
@@ -609,6 +725,7 @@ function previewPhoto() {
 
 function openDog(id = null) {
   if (session || pending || !db) return;
+  stopReplay();
   const current = snapshot.dogs.find(item => item.id === id);
   editId = current?.id ?? null;
   photo = current?.photo ?? '';
