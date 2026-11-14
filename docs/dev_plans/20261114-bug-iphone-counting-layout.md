@@ -94,3 +94,7 @@ Build `02a944e1bc7a` (version 1.1.0):
 | Update with Safari and installed app open preserves active count/forms until closure; app switching/locking cancels interrupted counts | Pending | Pending |
 
 Desktop emulation cannot establish these results. Use the existing two-build upgrade evidence in the [baseline plan](20261112-feature-pawbreath.md) for lifecycle implementation history; this follow-up verifies fresh installation/offline reopening, not a new two-build upgrade.
+
+## Follow-up — 14 November 2026
+
+The [focused counting plan](20261114-feature-focused-counting.md) supersedes the active circular target with a wide modal surface for watching the dog while tapping. It retains the separation of target and controls, stable accessible name, idle sticky Start and pending physical acceptance. Earlier build/test evidence above remains historical; the follow-up owns current implementation evidence and the optional audio behavior.

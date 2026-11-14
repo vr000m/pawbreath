@@ -2,6 +2,7 @@ import { openDatabase, readAll, saveDog, saveReading, deleteReading, restoreBack
   readBackupFile, makeBackup, toCsv, respiratoryRate, manualDate, manualDialogAction,
   CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId } from './data.mjs';
 import { createUpdateMonitor } from './updates.mjs';
+import { createTapSound } from './tap-sound.mjs';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -25,6 +26,11 @@ let photoBusy = false;
 let toastTimer;
 let installPrompt;
 let wakeLock;
+const tapSound = createTapSound(window.AudioContext || window.webkitAudioContext);
+const counterCard = document.querySelector('.counter-card');
+const counterHome = document.createComment('Counter home');
+counterCard.before(counterHome);
+const countingDialog = document.querySelector('#counting-dialog');
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel('pawbreath-updates') : null;
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -272,9 +278,19 @@ function setLocked(locked) {
   for (const select of $$('#selected-dog, #history-dog-select')) select.disabled = locked || !snapshot.dogs.length;
   for (const element of $$('[data-page], [data-duration], #add-dog, #edit-dog')) element.disabled = locked;
   for (const element of $$('#manual-entry, #history-manual-entry')) element.disabled = locked || !dog() || !db;
+  $('#tap-sound').disabled = locked;
+}
+
+function leaveCountingView() {
+  const moved = counterCard.parentElement === countingDialog;
+  if (countingDialog.open) countingDialog.close();
+  if (moved) counterHome.after(counterCard);
+  tapSound.stop();
+  return moved;
 }
 
 function resetCounter(message = '') {
+  const wasCounting = leaveCountingView();
   $('#counter-number').textContent = 'Ready';
   $('#timer-label').textContent = `${duration}-second measurement`;
   $('#timer-progress').value = 0;
@@ -292,6 +308,7 @@ function resetCounter(message = '') {
   $('#counter-instruction').textContent = 'Wait until your dog is settled or asleep.';
   $('#counter-status').textContent = message || (dog() ? 'Start the timer, then tap for each breath.' : 'Add your dog to begin.');
   setLocked(false);
+  if (wasCounting) $('#start').focus();
 }
 
 async function releaseWakeLock() {
@@ -316,6 +333,7 @@ function completeCount() {
   stopTimer();
   session = null;
   if (!finished.count) { resetCounter('No breaths were counted. Please try again.'); return; }
+  leaveCountingView();
   pending = { id: crypto.randomUUID(), dogId: finished.dogId, date: finished.date,
     count: finished.count, seconds: finished.seconds,
     rate: respiratoryRate(finished.count, finished.seconds), notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
@@ -355,8 +373,14 @@ $('#start').onclick = async () => {
   $('#breath-button').disabled = false;
   $('#breath-button').classList.add('active');
   $('#counter-number').textContent = '0';
-  $('#counter-instruction').textContent = 'Tap the circle once for each breath.';
-  $('#counter-status').textContent = 'Keep this screen open while counting.';
+  $('#counter-instruction').textContent = 'Watch your dog. Tap the green area once per breath.';
+  $('#counter-status').textContent = $('#tap-sound').checked
+    ? 'Tap sound on. Device volume or mute may prevent sound.'
+    : 'Keep this screen open while counting.';
+  countingDialog.append(counterCard);
+  try { countingDialog.showModal(); }
+  catch { cancelCount('Could not open counting. Please try again.'); return; }
+  tapSound.prepare($('#tap-sound').checked);
   $('#breath-button').focus();
   timer = setInterval(tick, 100);
   tick();
@@ -373,6 +397,7 @@ $('#breath-button').onclick = event => {
   session.count++;
   $('#counter-number').textContent = session.count;
   $('#undo').disabled = false;
+  tapSound.play();
 };
 $('#breath-button').onkeydown = event => { if (event.repeat) event.preventDefault(); };
 $('#undo').onclick = () => {
@@ -383,6 +408,14 @@ $('#undo').onclick = () => {
   $('#undo').disabled = session.count === 0;
 };
 $('#cancel').onclick = () => cancelCount();
+countingDialog.addEventListener('cancel', event => {
+  event.preventDefault();
+  if (session) cancelCount();
+});
+countingDialog.addEventListener('close', () => {
+  // close events are queued: an old event must not cancel a newly opened count.
+  if (!countingDialog.open && session) cancelCount();
+});
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && session) cancelCount('The count stopped when the app left the screen. Please start a new measurement.');
   if (!document.hidden && db && !session && !pending) refresh().catch(showError);

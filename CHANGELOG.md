@@ -4,9 +4,13 @@ User-visible changes are recorded here. Unreleased changes have not been deploye
 
 ## Unreleased
 
+### Added
+
+- Dedicated counting view with a large stationary green target, separate Undo/Cancel controls and optional quiet tap sounds. Background navigation is unavailable during a count; Escape cancels it. Single-finger movement on the target no longer scrolls the page, while pinch zoom remains available.
+
 ### Fixed
 
-- Active Undo/Cancel controls stay below the breath circle, including with bottom safe-area insets. Short screens can scroll without controls intercepting breath taps; idle Start stays pinned.
+- Active Undo/Cancel controls stay below the counting target, including with bottom safe-area insets. Short screens can scroll outside the target without controls intercepting breath taps; idle Start stays pinned.
 - The breath button shows a stable “Count one breath” label matching its accessible name, with the count exposed separately.
 
 ## Deployed build 63316a30696f — 14 November 2026
