@@ -1140,9 +1140,6 @@ nav button[aria-current=page] svg .knob {
     margin:8px 0 0;
     max-width:none;
   }
-  #history-page .page-heading .actions {
-    margin-top:12px;
-  }
   #measure-page .dog-picker {
     padding-top:12px;
   }
@@ -1253,4 +1250,20 @@ nav button[aria-current=page] svg .knob {
   .history-toolbar .dog-picker label {
     margin-bottom:6px;
   }
+}
+
+/* "Enter a reading" lives with the list it adds to, not above the chart. */
+.section-heading {
+  gap:16px;
+}
+
+.section-title span {
+  display:block;
+  margin-top:3px;
+}
+
+.section-heading .secondary {
+  flex:none;
+  padding:10px 16px;
+  font-size:14px;
 }

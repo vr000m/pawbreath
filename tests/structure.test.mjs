@@ -59,6 +59,7 @@ test('phone layout: SVG tab icons, History controls in one toolbar, Export CSV b
   assert.ok(toolbar.includes('id="history-dog-select"') && toolbar.includes('data-range="30"'), 'dog picker and period share the toolbar');
   assert.ok(!history.includes('id="csv-export"'), 'Export CSV exports every dog, so it does not belong on one dog\'s History page');
   assert.ok(history.indexOf('id="history-chart"') < history.indexOf('id="history-context"'), 'the chart comes before the context filter');
+  assert.ok(history.indexOf('id="history-chart"') < history.indexOf('id="history-manual-entry"') && history.indexOf('id="history-manual-entry"') < history.indexOf('id="reading-list"'), 'Enter a reading sits with the Recorded moments list, below the chart');
   const settings = html.match(/<section id="settings-page"[\s\S]*?<footer/)[0];
   assert.ok(settings.includes('id="csv-export"') && settings.includes('id="home-screen-card"'));
   assert.ok(!/<p class="small muted">For sleeping readings/.test(html), 'the card keeps one instruction line');

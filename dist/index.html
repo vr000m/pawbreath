@@ -74,10 +74,10 @@
     </section>
 
     <section id="history-page" class="page" hidden>
-      <div class="page-heading"><div><p class="eyebrow">THE BIGGER PICTURE</p><h1>A little history.<br>A clearer view.</h1><p class="subtitle" id="history-dog"></p></div><div class="actions"><button id="history-manual-entry" class="secondary" disabled>Enter a reading</button></div></div>
+      <div class="page-heading"><div><p class="eyebrow">THE BIGGER PICTURE</p><h1>A little history.<br>A clearer view.</h1><p class="subtitle" id="history-dog"></p></div></div>
       <div class="history-toolbar"><div class="dog-picker history-dog-picker"><label for="history-dog-select">Showing readings for</label><select id="history-dog-select" disabled><option>Add your first dog</option></select></div><div class="segments" role="group" aria-label="History period"><button data-range="7" aria-pressed="false">Week</button><button data-range="30" aria-pressed="true">Month</button><button data-range="all" aria-pressed="false">All</button></div></div>
       <section class="chart-card"><div class="card-top"><h2>Breaths per minute</h2></div><p id="chart-summary" class="muted"></p><canvas id="history-chart" role="img" aria-label="Breathing rate over time for the selected readings. Exact readings are listed below."></canvas><p id="chart-empty" class="empty-copy">Save a reading to begin your history.</p><div class="history-context-filter"><label for="history-context">Compare readings taken in the same state</label><select id="history-context" aria-describedby="history-context-help"><option value="all">All contexts</option></select><p id="history-context-help" class="small muted">Filters apply to the chart and list. Uncertain readings stay labelled.</p></div></section>
-      <div class="section-heading"><h2>Recorded moments</h2><span id="reading-total" class="muted"></span></div><div id="reading-list"></div>
+      <div class="section-heading"><div class="section-title"><h2>Recorded moments</h2><span id="reading-total" class="muted"></span></div><button id="history-manual-entry" class="secondary" disabled>Enter a reading</button></div><div id="reading-list"></div>
     </section>
 
     <section id="settings-page" class="page" hidden>
