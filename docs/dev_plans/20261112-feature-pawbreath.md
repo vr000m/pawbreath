@@ -1,8 +1,8 @@
 # Pawbreath home-screen app
 
-**Status:** In review — 1.1.0 implemented and desktop-verified; iPhone acceptance and publication pending
+**Status:** In review — 1.1.0 implemented; phone-first layout pass (PR #4) desktop- and emulator-verified; physical-device acceptance pending
 **Component:** Pawbreath
-**Branch:** feature/manual-readings-pwa-updates
+**Branch:** feature/mobile-layout-pass
 **Date:** 2026-11-12
 **Updated:** 2026-11-13
 **Objective:** Provide an offline dog breathing journal on a phone.
@@ -14,12 +14,12 @@ A static HTML/CSS/JavaScript app with device-local IndexedDB storage. No third-p
 | Files | Responsibility |
 | --- | --- |
 | `dist/index.html`, `app.css`, `app.js` | Profiles/photos, counter, manual-entry forms, guidance, History and Settings |
-| `dist/data.mjs` | Validation, transactional storage, CSV and JSON backup/restore, `CONTEXT_LABELS`, `withReadingDefaults` and `manualDialogAction` |
+| `dist/data.mjs` | Validation, transactional storage, CSV and JSON backup/restore, `CONTEXT_LABELS`, `withReadingDefaults`, `defaultDogId` and `manualDialogAction` |
 | `dist/updates.mjs`, `sw.js` | Update status and scoped offline shell; no journal writes |
 | `scripts/release.mjs`, `scripts/lib/precache-assets.mjs`, `dist/version.mjs`, `dist/release.json` | Deterministic app release/build identity; published metadata is network-only |
 | `dist/manifest.webmanifest`, icons | Home-screen installation |
 | `wrangler.jsonc`, `dist/_headers`, `scripts/cloudflare.sh`, `justfile` | Hosting, security headers, external credentials and deployment checks |
-| `tests/` | Data/worker/update/deployment tests, `manual-dialog.test.mjs`, `structure.test.mjs` and browser harness |
+| `tests/` | Data/worker/update/deployment tests, `manual-dialog.test.mjs`, `structure.test.mjs` (including the phone-layout and 16px-control checks) and browser harness |
 
 ```mermaid
 flowchart LR
@@ -45,6 +45,7 @@ flowchart LR
 - **2026-11-12:** Moved from `tinkerbox/www/pawbreath` into a standalone repository. Cloudflare Workers replaced the proposed owner-private Sites host; the unused Sites identity stays ignored locally. The public static host adds no shared data access.
 - **2026-11-12:** Removed backup aggregate limits after additive restores produced valid journals that could not round-trip. Workers' `index.html` redirect required caching only the scope root. The earlier three-round gauntlet remained non-converged; subsequent manual code/security/docs checks closed its remaining security-header finding before the baseline merge/deploy. Do not relabel that historical gauntlet as converged.
 - **2026-11-13:** Added manual/context records and backup format 2 without changing IndexedDB schema. Replaced fixed cache versions with generated release/build identity. Review fixes cover dirty-dialog retention, date/rate bounds, CSV recovery and worker build matching. Added informational guidance and comparable History without automatic clinical thresholds.
+- **2026-11-13:** Phone-first layout pass. Measure fits one screen with Start pinned above the tab bar; History gets its own dog picker; the app opens on the last-chosen dog, else the dog with the newest reading (`defaultDogId`), because the first-alphabetical default hid a real reading; CSV export moved to Settings because it covers every dog; Save/Cancel stay visible in the manual dialog; install help hides once installed; "Enter a reading" moved beside the Recorded moments list; form controls are at least 16px so iPhone does not zoom. Wide screens keep the same picker position on Measure and History.
 - **2026-11-13:** Consolidated this plan to retain decisions and final evidence. Superseded permission failures, interim test counts and handoff logs remain in Git history: `git show c28de322c645577736b5c040b1c950d0ff8a3838:docs/dev_plans/20261112-feature-pawbreath.md`.
 
 ## Verification and acceptance
@@ -54,8 +55,10 @@ Verified 13 November 2026 for release 1.1.0, build `ade901758d5a`:
 - [x] `npm test`: 62 Node tests, release metadata and syntax checks pass; `just deploy-check` completes the Wrangler dry run.
 - [x] Browser harness: 18 checks (all pass in headless Chromium) cover real IndexedDB writes, failures/rollback, concurrent connections, repeated restore, hostile text, timer boundaries, manual entry, threshold independence, context filters and save visibility. Its worker registration is simulated.
 - [x] Recorded 375px layout checks show no horizontal overflow; manual Save/Cancel controls remain reachable.
+- [x] Phone layout pass checked in Chromium DevTools emulation at 390x844, 375x667 and a 568px-tall phone, plus 1280x800: Start reachable on Measure, the count circle clears the Undo/Cancel bar mid-count, both dog pickers start at the same position, no horizontal overflow. A Lighthouse mobile audit was run; the one open finding is the breath button's accessible name ("Count one breath") not matching its visible text.
 - [x] Separate real localhost Chromium upgrade from `b54a8e48353a` to `a3f2bc133df7`: the worker waited through an active count, pending result notes, dirty manual form and profile edits. Closing one of two clients retained the remaining draft and kept the update waiting. After saving and closing all clients naturally, the new build reopened offline with identical journal data.
 - [x] After that upgrade, offline guidance, actual chart/list filtering, complete CSV/JSON downloads and timed/manual save visibility passed. Tested assets matched `dist/` byte for byte; no forced activation was used.
+- [ ] Physical phone: `position: sticky` Start/Undo/Cancel bar over the tab bar, the `:has()` mid-count title rule, and the install card hiding in `display-mode: standalone`.
 - [ ] Physical iPhone: Safari home-screen installation and offline reopening after fully quitting.
 - [ ] Physical iPhone: update activation with Safari and the installed app both open; lock-screen/app-switch cancellation of active counts.
 - [ ] First measurement with a settled/asleep dog. User-reported checks of the deployed baseline do not verify this new release.
