@@ -62,6 +62,20 @@ const slice = (html, startRe, endRe) => {
   const to = rest.slice(1).search(endRe);
   return to < 0 ? rest : rest.slice(0, to + 1);
 };
+// The element opened by the first match of `startRe` (a <div>), through its own closing tag, by counting
+// nested <div> tags. Unlike `slice`, a child moved out of the element no longer falls inside the result.
+const divElement = (html, startRe) => {
+  const from = html.search(startRe);
+  assert.ok(from >= 0, `${startRe} not found`);
+  const tags = /<div\b[^>]*>|<\/div\s*>/g;
+  tags.lastIndex = from;
+  let depth = 0;
+  for (let match; (match = tags.exec(html));) {
+    depth += match[0][1] === '/' ? -1 : 1;
+    if (depth === 0) return html.slice(from, tags.lastIndex);
+  }
+  assert.fail(`${startRe} is never closed`);
+};
 const stripComments = css => css.replace(/\/\*[\s\S]*?\*\//g, '');
 // Bodies of every at-rule block whose prelude matches, found by brace matching.
 const atBlocks = (css, preludeRe) => {
@@ -106,7 +120,7 @@ test('phone layout: SVG tab icons, History controls in one toolbar, Export CSV b
   assert.equal((nav.match(/<svg\b/g) ?? []).length, 3, 'each tab has an SVG icon');
   for (const glyph of ['◉', '▥', '⚙']) assert.ok(!html.includes(glyph), `glyph ${glyph} renders differently per platform`);
   const history = slice(html, openTag('section', 'id', 'history-page'), openTag('section', 'id', 'settings-page'));
-  const toolbar = slice(history, openTag('div', 'class', 'history-toolbar'), openTag('section', 'class', 'chart-card'));
+  const toolbar = divElement(history, openTag('div', 'class', 'history-toolbar'));
   assert.ok(hasId(toolbar, 'history-dog-select') && /\bdata-range="30"/.test(toolbar), 'dog picker and period share the toolbar');
   assert.ok(!hasId(history, 'csv-export'), 'Export CSV exports every dog, so it does not belong on one dog\'s History page');
   const at = id => history.search(new RegExp(`\\bid="${id}"`));
@@ -205,4 +219,17 @@ test('an update notice shown mid-count on a phone is visually hidden, not remove
   assert.ok(rule, 'a phone rule hides #update-notice while .breath-circle.active is present');
   assert.ok(/position:\s*absolute/.test(rule.body) && /clip-path:\s*inset\(50%\)/.test(rule.body), 'visually hidden, out of the flow');
   assert.ok(!/display:\s*none|visibility:\s*hidden/.test(rule.body), 'the status stays in the accessibility tree');
+});
+
+test('phone pickers let the select shrink, so a long dog name truncates instead of overlapping the controls beside it', () => {
+  const [phone] = atBlocks(read('app.css'), phoneQuery);
+  const phoneRules = rules(phone);
+  const columns = phoneRules.filter(({ selectors, body }) => selectors.some(part => /\.dog-picker\b/.test(part)) && /grid-template-columns/.test(body));
+  assert.ok(columns.length > 0, 'a phone rule sets the picker columns');
+  for (const { selectors, body } of columns) {
+    // A bare 1fr track keeps an automatic minimum (the select's min-content width, i.e. its longest option).
+    assert.ok(/grid-template-columns:\s*minmax\(\s*0\s*,\s*1fr\s*\)/.test(body), `${selectors.join(',')}: the select column must be minmax(0,1fr)`);
+  }
+  const select = phoneRules.find(({ selectors }) => selectors.includes('.dog-picker select'));
+  assert.ok(select && /min-width:\s*0\s*(?:;|$)/.test(select.body), 'the phone .dog-picker select has min-width:0');
 });

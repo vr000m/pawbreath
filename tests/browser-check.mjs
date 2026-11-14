@@ -334,6 +334,33 @@ await check('Backup round-trip restores into an empty database', async () => {
   assert(restored.dogs.length === saved.dogs.length && restored.readings.length === saved.readings.length, 'Round-trip lost data');
   fresh.close();
 });
+await check('A long dog name shrinks the phone pickers instead of overlapping the controls beside them', async () => {
+  const name = 'Sir Bartholomew the Third of Fluffington';
+  const clone = selector => {
+    const node = document.querySelector(selector).cloneNode(true);
+    const select = node.querySelector('select');
+    select.innerHTML = '';
+    select.append(new Option(name));
+    return node.outerHTML;
+  };
+  const frame = document.createElement('iframe');
+  frame.style.cssText = 'position:absolute;left:-10000px;top:0;width:320px;height:568px;border:0';
+  frame.srcdoc = '<!doctype html><html><head><meta name="viewport" content="width=device-width"><link rel="stylesheet" href="' + document.querySelector('link[rel=stylesheet]').href + '"></head><body><main>'
+    + '<section id="measure-page" class="page"><div class="page-heading">' + clone('#measure-page .dog-picker') + '</div></section>'
+    + '<section id="history-page" class="page">' + clone('.history-toolbar') + '</section></main></body></html>';
+  const loaded = new Promise(resolve => frame.addEventListener('load', resolve, {once:true}));
+  document.body.append(frame);
+  try {
+    await loaded;
+    const doc = frame.contentDocument;
+    for (let i = 0; i < 50 && !doc.styleSheets.length; i++) await sleep(50);
+    assert(frame.contentWindow.matchMedia('(max-width:600px)').matches, 'the frame is not phone width');
+    const box = selector => doc.querySelector(selector).getBoundingClientRect();
+    assert(box('#selected-dog').right <= box('#add-dog').left + 0.5, 'Measure: the select runs under + Add a dog');
+    assert(box('#history-dog-select').right <= box('.history-toolbar .segments').left + 0.5, 'History: the select runs under the period buttons');
+    assert(box('.history-toolbar .segments').right <= 320 && box('#add-dog').right <= 320, 'a control is pushed off a 320px screen');
+  } finally { frame.remove(); }
+});
 await refresh();
 $('#error').hidden = true;
 showPage('measure');

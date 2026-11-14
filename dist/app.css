@@ -1058,10 +1058,16 @@ nav button[aria-current=page] svg .knob {
     clip-path:inset(50%);
     white-space:nowrap;
   }
+  /* A dog name can be 60 characters. minmax(0,…) and min-width:0 let the select shrink and truncate it
+     instead of pushing past "+ Add a dog" or the History period buttons; a plain 1fr track would not go
+     below the select's min-content width in engines that size it from the longest option. */
   .dog-picker {
-    grid-template-columns:1fr auto;
+    grid-template-columns:minmax(0,1fr) auto;
     gap:0 12px;
     width:100%;
+  }
+  .dog-picker select {
+    min-width:0;
   }
   .dog-picker label {
     margin-bottom:7px;

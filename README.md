@@ -28,7 +28,7 @@ New backups use format 2 and accept version 1 imports. Older app versions cannot
 
 Settings shows running/published versions, the last successful check and **Check for updates**. Checks also run on launch, reconnection and resumption. **Offline ready** means the app is cached, not necessarily current.
 
-When **Update ready** appears (on a phone it waits until a running count ends), save your work, fully close the installed app and all Pawbreath browser tabs, then reopen. Downloaded updates can activate offline and retain the journal. They never force a reload during a count or form edit. Unsaved work does not survive intentionally closing the app. Older releases gain the version panel only after completing this upgrade cycle.
+When **Update ready** appears (on a phone it stays visually hidden until a running count ends; screen readers still announce it), save your work, fully close the installed app and all Pawbreath browser tabs, then reopen. Downloaded updates can activate offline and retain the journal. They never force a reload during a count or form edit. Unsaved work does not survive intentionally closing the app. Older releases gain the version panel only after completing this upgrade cycle.
 
 ## Develop and verify
 
