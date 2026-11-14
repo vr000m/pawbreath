@@ -19,7 +19,7 @@ A static HTML/CSS/JavaScript app with device-local IndexedDB storage. No third-p
 | `scripts/release.mjs`, `scripts/lib/precache-assets.mjs`, `dist/version.mjs`, `dist/release.json` | Deterministic app release/build identity; published metadata is network-only |
 | `dist/manifest.webmanifest`, icons | Home-screen installation |
 | `wrangler.jsonc`, `dist/_headers`, `scripts/cloudflare.sh`, `justfile` | Hosting, security headers, external credentials and deployment checks |
-| `tests/` | Data/worker/update/deployment tests, `manual-dialog.test.mjs`, `structure.test.mjs` (including the phone-layout and 16px-control checks) and browser harness |
+| `tests/` | Data/worker/update/deployment tests, `manual-dialog.test.mjs`, `structure.test.mjs` (including the phone-layout and 16px-control checks, and the single phone-block, wide-screen complement and source-order guards) and browser harness |
 
 ```mermaid
 flowchart LR
