@@ -96,10 +96,10 @@ const phoneQuery = /^@media\s*\(\s*max-width\s*:\s*600px\s*\)\s*$/;
 const topLevel = css => {
   css = stripComments(css);
   const blocks = [];
-  let depth = 0, start = 0;
+  let depth = 0, start = 0, open = 0;
   for (let i = 0; i < css.length; i++) {
-    if (css[i] === '{') { if (depth++ === 0) blocks.push({ prelude: css.slice(start, i).trim() }); }
-    else if (css[i] === '}' && --depth === 0) start = i + 1;
+    if (css[i] === '{') { if (depth++ === 0) { blocks.push({ prelude: css.slice(start, i).trim() }); open = i + 1; } }
+    else if (css[i] === '}' && --depth === 0) { blocks[blocks.length - 1].body = css.slice(open, i); start = i + 1; }
     else if (css[i] === ';' && depth === 0) start = i + 1;
   }
   return blocks;
@@ -192,25 +192,21 @@ test('form controls are at least 16px so iOS Safari does not zoom the page on fo
   assert.deepEqual(small, []);
 });
 
-test('phone CSS: one max-width:600px block, so each phone property has a single value', () => {
-  const css = read('app.css');
-  // Every spelling of a plain 600px max-width query counts; compound ones like the short-phone block do not.
-  assert.deepEqual(plainPhonePreludes(css).map(({ prelude }) => prelude), ['@media(max-width:600px)']);
-  assert.equal(atBlocks(css, phoneQuery).length, 1);
-  // Nothing unscoped follows it, so no base rule can override a phone value by source order.
+// Why a block after the phone block could override one of its values by source order, as messages ([] when none).
+// A block after it may only be: a media block capped at 600px or less (the height-gated short-phone blocks), the
+// wide-screen complement `not all and (max-width:600px)` (the only complement spelling accepted), or above 600px
+// only. A width-agnostic block (display-mode, motion) may follow if it styles nothing the phone block styles.
+// Width is read only in the form (max-width:Npx) / (min-width:Npx); any other width feature (range syntax, em,
+// rem) fails closed rather than being parsed. Non-@media at-rules (@supports, @layer, @container) fail, which
+// also covers any @media nested in them. Each block's body comes from its own entry, never a prelude lookup.
+const phoneOrderProblems = css => {
   const blocks = topLevel(css);
   const phone = blocks.findIndex(({ prelude }) => phoneQuery.test(prelude));
-  const after = blocks.slice(phone + 1).filter(({ prelude }) => !prelude.startsWith('@')).map(({ prelude }) => prelude);
-  assert.deepEqual(after, [], 'base rules belong above the phone block');
-  // Media blocks after it must not apply to phones either, unless they only narrow it: capped at 600px or less
-  // (the height-gated short-phone blocks), the wide-screen complement, or above 600px only. A wider breakpoint
-  // such as max-width:800px also matches a phone and would override a phone value by source order, so it
-  // belongs above. A width-agnostic block (display-mode, motion) may follow only if it styles nothing the phone
-  // block styles.
-  const phoneSelectors = new Set(rules(atBlocks(css, phoneQuery)[0]).flatMap(({ selectors }) => selectors));
+  const phoneSelectors = new Set(rules(blocks[phone].body).flatMap(({ selectors }) => selectors));
+  const complement = query => query.toLowerCase().replace(/\s+/g, '') === 'notalland(max-width:600px)';
   const skipsPhones = query => {
     const q = query.toLowerCase().replace(/\s+/g, '');
-    if (q === 'notalland(max-width:600px)') return true;
+    if (complement(query)) return true;
     if (q.startsWith('not')) return false;
     const conjuncts = q.replace(/^(?:only)?(?:screen|all)and/, '').split('and');
     return conjuncts.some(part => {
@@ -218,15 +214,53 @@ test('phone CSS: one max-width:600px block, so each phone property has a single 
       return max ? Number(max[1]) <= 600 : min ? Number(min[1]) > 600 : false;
     });
   };
-  const overriding = [];
-  for (const { prelude } of blocks.slice(phone + 1).filter(({ prelude }) => /^@media\b/i.test(prelude))) {
+  const problems = [];
+  for (const { prelude, body } of blocks.slice(phone + 1)) {
+    if (!prelude.startsWith('@')) { problems.push(`base rule \`${prelude}\` belongs above the phone block`); continue; }
+    if (!/^@media\b/i.test(prelude)) { problems.push(`${prelude}: only @media blocks may follow the phone block`); continue; }
     const queries = prelude.replace(/^@media/i, '').split(',');
+    if (queries.some(query => !complement(query) && /width/i.test(query.replace(/\((?:max|min)-width\s*:\s*\d*\.?\d+px\)/gi, '')))) {
+      problems.push(`${prelude}: only px max-width/min-width is supported after the phone block`);
+      continue;
+    }
     if (queries.every(skipsPhones)) continue;
-    if (queries.some(query => /max-width\s*:\s*(\d*\.?\d+)px/i.test(query) && !skipsPhones(query))) { overriding.push(prelude); continue; }
-    const [body] = atBlocks(css, { test: candidate => candidate.trim() === prelude });
-    if (rules(body).some(({ selectors }) => selectors.some(part => phoneSelectors.has(part)))) overriding.push(prelude);
+    if (queries.some(query => /max-width\s*:\s*(\d*\.?\d+)px/i.test(query) && !skipsPhones(query))) { problems.push(`${prelude}: matches phones, so it belongs above the phone block`); continue; }
+    if (rules(body).some(({ selectors }) => selectors.some(part => phoneSelectors.has(part)))) problems.push(`${prelude}: styles what the phone block styles, so it belongs above the phone block`);
   }
-  assert.deepEqual(overriding, [], 'a media block that matches phones belongs above the phone block');
+  return problems;
+};
+
+test('phone CSS: one max-width:600px block, so each phone property has a single value', () => {
+  const css = read('app.css');
+  // Every spelling of a plain 600px max-width query counts; compound ones like the short-phone block do not.
+  assert.deepEqual(plainPhonePreludes(css).map(({ prelude }) => prelude), ['@media(max-width:600px)']);
+  assert.equal(atBlocks(css, phoneQuery).length, 1);
+  // Nothing after it may match phones and override a phone value by source order (see phoneOrderProblems).
+  assert.deepEqual(phoneOrderProblems(css), []);
+  // The guard must catch each way a late block could override the phone block. Each case appends to the real CSS.
+  const brand = rules(atBlocks(css, phoneQuery)[0]).some(({ selectors }) => selectors.includes('.brand'));
+  assert.ok(brand, 'the phone block styles .brand, which the cases below rely on');
+  const cases = {
+    // The same prelude already appears earlier; the check must read this block's own body, not the earlier one.
+    '@media(display-mode:standalone){.brand{color:red}}': /styles what the phone block styles/,
+    '@media(prefers-reduced-motion:reduce){.brand{}}': /styles what the phone block styles/,
+    '@supports(display:grid){.brand{color:red}}': /only @media/,
+    '@supports(display:grid){@media(max-width:800px){.brand{}}}': /only @media/,
+    '@layer x{.brand{}}': /only @media/,
+    '@media(width<=800px){.zzz{}}': /only px max-width\/min-width/,
+    '@media(max-width:50em){.zzz{}}': /only px max-width\/min-width/,
+    '@media(width<=500px){.zzz{}}': /only px max-width\/min-width/,
+    '@media(max-width:800px){.zzz{}}': /matches phones/,
+    '.zzz{color:red}': /base rule/,
+  };
+  for (const [extra, expected] of Object.entries(cases)) {
+    const problems = phoneOrderProblems(`${css}\n${extra}`);
+    assert.ok(problems.some(problem => expected.test(problem)), `${extra} must fail the guard, got ${JSON.stringify(problems)}`);
+  }
+  // Blocks that only narrow the phone block, or style nothing it styles, are fine after it.
+  for (const extra of ['@media(max-width:600px) and (max-height:500px){.zzz{}}', '@media(min-width:601px){.brand{}}', '@media(display-mode:standalone){.zzz{}}']) {
+    assert.deepEqual(phoneOrderProblems(`${css}\n${extra}`), [], extra);
+  }
 });
 
 test('the wide-screen picker block is the exact complement of the phone block, so no viewport width gets neither', () => {
