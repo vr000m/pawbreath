@@ -1067,3 +1067,9 @@ dialog label {
 .history-context-filter { margin:16px 0; }
 .history-context-filter select { width:100%; max-width:380px; }
 .history-context-filter p { max-width:65ch; }
+
+.history-dog-picker {
+  padding-top:0;
+  margin:-14px 0 22px;
+  max-width:290px;
+}

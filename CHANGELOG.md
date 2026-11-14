@@ -4,6 +4,12 @@ User-visible changes are recorded here. Unreleased changes have not been deploye
 
 ## Unreleased
 
+### Fixed
+
+- The History page has its own dog picker, shared with Measure, so a dog's readings are no longer hidden behind a selector that only existed on another page.
+
+## 1.1.0 — 14 November 2026
+
 ### Added
 
 - Manual readings with the original measurement time, context, uncertainty and notes; no invented count or duration.
