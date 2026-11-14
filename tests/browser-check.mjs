@@ -334,7 +334,9 @@ await check('Backup round-trip restores into an empty database', async () => {
   assert(restored.dogs.length === saved.dogs.length && restored.readings.length === saved.readings.length, 'Round-trip lost data');
   fresh.close();
 });
-await check('A long dog name shrinks the phone pickers instead of overlapping the controls beside them', async () => {
+// Smoke check only: Chromium already shrinks the select without the minmax(0,1fr)/min-width:0 rules, so this
+// passes on the unfixed CSS. The structure test on those rules is the regression guard.
+await check('Smoke: a long dog name fits beside the phone picker controls', async () => {
   const name = 'Sir Bartholomew the Third of Fluffington';
   const clone = selector => {
     const node = document.querySelector(selector).cloneNode(true);
@@ -359,6 +361,29 @@ await check('A long dog name shrinks the phone pickers instead of overlapping th
     assert(box('#selected-dog').right <= box('#add-dog').left + 0.5, 'Measure: the select runs under + Add a dog');
     assert(box('#history-dog-select').right <= box('.history-toolbar .segments').left + 0.5, 'History: the select runs under the period buttons');
     assert(box('.history-toolbar .segments').right <= 320 && box('#add-dog').right <= 320, 'a control is pushed off a 320px screen');
+  } finally { frame.remove(); }
+});
+await check('Mid-count on a 320x480 phone the whole circle clears the pinned Undo/Cancel bar', async () => {
+  const frame = document.createElement('iframe');
+  frame.style.cssText = 'position:absolute;left:-10000px;top:0;width:320px;height:480px;border:0';
+  frame.srcdoc = '<!doctype html><html><head><meta name="viewport" content="width=device-width"><link rel="stylesheet" href="' + document.querySelector('link[rel=stylesheet]').href + '"></head><body>'
+    + document.querySelector('header').outerHTML + document.querySelector('main').outerHTML + '</body></html>';
+  const loaded = new Promise(resolve => frame.addEventListener('load', resolve, {once:true}));
+  document.body.append(frame);
+  try {
+    await loaded;
+    const doc = frame.contentDocument;
+    for (let i = 0; i < 50 && !doc.styleSheets.length; i++) await sleep(50);
+    assert(frame.contentWindow.matchMedia('(max-width:600px) and (max-height:560px)').matches, 'the frame is not a very short phone');
+    // The state counting() sets up: Measure shown, the circle active, Undo and Cancel in place of Start.
+    for (const section of doc.querySelectorAll('.page')) section.hidden = section.id !== 'measure-page';
+    doc.querySelector('#breath-button').classList.add('active');
+    doc.querySelector('#start').hidden = true;
+    doc.querySelector('#undo').hidden = false;
+    doc.querySelector('#cancel').hidden = false;
+    const box = selector => doc.querySelector(selector).getBoundingClientRect();
+    for (const selector of ['#timer-label', '#timer-progress', '#breath-button', '#counter-number', '#undo', '#cancel']) assert(box(selector).height > 0, selector + ' is not shown mid-count');
+    assert(box('#breath-button').bottom <= box('#counter-controls').top + 0.5, 'the pinned controls cover the circle (' + box('#breath-button').bottom + ' > ' + box('#counter-controls').top + ')');
   } finally { frame.remove(); }
 });
 await refresh();

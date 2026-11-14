@@ -1211,6 +1211,20 @@ nav button[aria-current=page] svg .knob {
   }
 }
 
+/* Very short phones (an iPhone SE 1st gen in Safari is about 320x480): even without the picker and
+   instruction, the chrome above the circle, its 150px minimum and the pinned bar need about 557px, so the bar
+   would cover the circle and catch breath taps. Mid-count, also drop the dog picker (disabled while counting;
+   the dog was chosen before Start) and the empty heading's margin. The circle keeps its size: it already
+   holds the count at its minimum. */
+@media(max-width:600px) and (max-height:560px) {
+  #measure-page:has(.breath-circle.active) .dog-picker {
+    display:none;
+  }
+  #measure-page:has(.breath-circle.active) .page-heading {
+    margin-bottom:0;
+  }
+}
+
 /* Wide screens: the dog picker sits in the same place on Measure and History, left-aligned under the
    heading as on a phone, with the History period toggle beside it. */
 @media not all and (max-width:600px) {

@@ -233,3 +233,18 @@ test('phone pickers let the select shrink, so a long dog name truncates instead 
   const select = phoneRules.find(({ selectors }) => selectors.includes('.dog-picker select'));
   assert.ok(select && /min-width:\s*0\s*(?:;|$)/.test(select.body), 'the phone .dog-picker select has min-width:0');
 });
+
+test('very short phones drop the dog picker mid-count, so the 150px circle clears the pinned Undo/Cancel bar at 480px tall', () => {
+  const css = read('app.css');
+  const shortQuery = /^@media\s*\(\s*max-width\s*:\s*600px\s*\)\s*and\s*\(\s*max-height\s*:\s*(\d+)px\s*\)\s*$/;
+  const heights = topLevel(css).map(({ prelude }) => prelude.match(shortQuery)?.[1]).filter(Boolean).map(Number);
+  // 640: the duration picker and instruction go. Below about 557px the circle's 150px minimum, the chrome
+  // still shown above it and the pinned bar no longer fit, so a second step must start between there and 568
+  // (a 568px-tall phone keeps its picker).
+  assert.ok(heights.includes(640), 'the short-phone block is kept');
+  const veryShort = heights.filter(height => height >= 557 && height < 568);
+  assert.equal(veryShort.length, 1, `one very-short-phone block between 557px and 567px tall (found ${heights.join(', ')})`);
+  const [block] = atBlocks(css, new RegExp(`^@media\\s*\\(\\s*max-width\\s*:\\s*600px\\s*\\)\\s*and\\s*\\(\\s*max-height\\s*:\\s*${veryShort[0]}px\\s*\\)\\s*$`));
+  const rule = rules(block).find(({ selectors }) => selectors.some(part => /#measure-page:has\(\s*\.breath-circle\.active\s*\)\s+\.dog-picker$/.test(part)));
+  assert.ok(rule && /display:\s*none/.test(rule.body), 'the Measure dog picker is removed from the flow mid-count');
+});
