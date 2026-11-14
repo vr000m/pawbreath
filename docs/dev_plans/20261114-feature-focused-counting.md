@@ -76,9 +76,9 @@ The reported device-specific cause remains unconfirmed; improving the target doe
 
 ## Final results — 14 November 2026
 
-Version 1.1.0 build `9116614af4b7`:
+Version 1.1.0 build `2338a7bf7184`. A code-review fix removed unreachable `:has(.breath-circle.active)` CSS (the card lives in the dialog, outside `main`); `npm test` and the browser harness were re-run on this build, while the touch, screenshot and offline evidence below was gathered on `9116614af4b7`:
 
-- 71 Node tests, metadata/syntax checks and `just deploy-check` pass. The generated helper digest is included in the worker's precache manifest.
+- 69 Node tests (71 before the review fix replaced three dead-CSS guards with one), metadata/syntax checks and `just deploy-check` pass. The generated helper digest is included in the worker's precache manifest.
 - 23 browser harness checks pass, including modal open failure, queued close events, Escape/zero/completed exits, focus restoration, delayed/rejected audio across session rollover, and the unchanged save/filter/export/update contracts.
 - Geometry covers 19 sizes × four bottom insets, scroll positions and a grid of 15 target points. Target dimensions stay stable across 9/10/99/100 counts. Both primary portrait layouts show target and controls together; larger-text/top-side-padding and landscape cases remain reachable. A mutation shrinking the target to its former width fails the width invariant.
 - Real Chromium touch sessions at 390×844 and 440×956 pass 8px drift, cancelled touch, held touch, eight rapid taps, held Enter/Space, Undo, modal focus, landscape and Escape. Screenshots inspected. Audio graphs request one oscillator per accepted click when enabled, none for Undo or opt-out. This verifies scheduling, not audible output.

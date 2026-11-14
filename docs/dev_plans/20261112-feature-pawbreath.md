@@ -62,7 +62,7 @@ Verified 13 November 2026 for release 1.1.0, build `63316a30696f`:
 - [x] After that upgrade, offline guidance, actual chart/list filtering, complete CSV/JSON downloads and timed/manual save visibility passed. Tested assets matched `dist/` byte for byte; no forced activation was used.
 - [ ] Baseline safe-area overlap: measured 31.6px at 375×667 with inset 34px; not reproduced on a physical device. The follow-up linked above contains the fix and regression evidence. The earlier assumption that installed iPhone viewports would avoid this condition is withdrawn.
 - [ ] Physical phone (note the model): start a count and check Undo does not cover the circle.
-- [ ] Physical phone: sticky idle Start and normal-flow active Undo/Cancel controls in the follow-up, the `:has()` mid-count title rule, and the install card hiding in `display-mode: standalone`.
+- [ ] Physical phone: sticky idle Start and normal-flow active Undo/Cancel controls in the follow-up, and the install card hiding in `display-mode: standalone`.
 - [ ] Physical iPhone: Safari home-screen installation and offline reopening after fully quitting.
 - [ ] Physical iPhone: a long dog name truncates inside both pickers (Chromium and Firefox already shrink the select; Safari is unchecked).
 - [ ] Physical iPhone: update activation with Safari and the installed app both open; lock-screen/app-switch cancellation of active counts.
