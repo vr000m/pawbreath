@@ -4,7 +4,7 @@ A mobile-first breathing journal for dogs: timed 30/60-second counts, multiple p
 
 ![Pawbreath measurement screen with a sample Milo profile and latest reading](docs/images/pawbreath-preview.png)
 
-Local preview with sample data. See the [changelog](CHANGELOG.md) for changes and the [development plan](docs/dev_plans/20261112-feature-pawbreath.md) for decisions and verification. Unreleased changes (see the changelog) are not yet deployed; physical iPhone acceptance remains pending.
+Local preview with sample data. See the [changelog](CHANGELOG.md) for changes and the [development plan](docs/dev_plans/20261112-feature-pawbreath.md) for decisions and verification. The mobile UI improvements are deployed as 1.1.0 build `63316a30696f`. The [iPhone counting fixes and acceptance checklist](docs/dev_plans/20261114-bug-iphone-counting-layout.md) are not yet deployed; physical checks on iPhone 12 and iPhone 17 Pro Max remain pending.
 
 ## Install and use
 
