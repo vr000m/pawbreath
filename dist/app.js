@@ -352,7 +352,7 @@ function completeCount() {
   if (!finished.count) { resetCounter('No breaths were counted. Please try again.'); return; }
   leaveCountingView();
   pending = { id: crypto.randomUUID(), dogId: finished.dogId, date: finished.date,
-    count: finished.count, seconds: finished.seconds,
+    count: finished.count, seconds: finished.seconds, tapOffsetsMs: [...finished.tapOffsetsMs],
     rate: respiratoryRate(finished.count, finished.seconds), notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
   $('#timer-progress').value = finished.seconds;
   $('#timer-label').textContent = 'Measurement complete';
@@ -382,7 +382,7 @@ function tick() {
 $('#start').onclick = async () => {
   if (!dog() || session || pending) return;
   $('#error').hidden = true;
-  session = { dogId: selectedId, date: new Date().toISOString(), started: performance.now(), seconds: duration, count: 0 };
+  session = { dogId: selectedId, date: new Date().toISOString(), started: performance.now(), seconds: duration, count: 0, tapOffsetsMs: [] };
   setLocked(true);
   $('#start').hidden = true;
   $('#undo').hidden = false;
@@ -409,8 +409,10 @@ $('#start').onclick = async () => {
 $('#breath-button').onclick = event => {
   if (event.detail > 0) event.preventDefault();
   if (!session) return;
-  if (performance.now() - session.started >= session.seconds * 1000) { completeCount(); return; }
-  session.count++;
+  const elapsed = performance.now() - session.started;
+  if (elapsed >= session.seconds * 1000) { completeCount(); return; }
+  session.tapOffsetsMs.push(Math.floor(elapsed));
+  session.count = session.tapOffsetsMs.length;
   $('#counter-number').textContent = session.count;
   $('#undo').disabled = false;
   tapSound.play();
@@ -436,7 +438,8 @@ $('#breath-button').onkeydown = event => { if (event.repeat) event.preventDefaul
 $('#undo').onclick = () => {
   if (!session) return;
   if (performance.now() - session.started >= session.seconds * 1000) { completeCount(); return; }
-  session.count = Math.max(0, session.count - 1);
+  session.tapOffsetsMs.pop();
+  session.count = session.tapOffsetsMs.length;
   $('#counter-number').textContent = session.count;
   $('#undo').disabled = session.count === 0;
 };

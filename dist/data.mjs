@@ -1,5 +1,5 @@
 export const FORMAT = 'pawbreath';
-export const VERSION = 2;
+export const VERSION = 3;
 // The single definition of measurement contexts. `label` is the form option, `filter` the History
 // filter option and `short` the History/latest-reading description. Order is the form order.
 export const CONTEXT_LABELS = Object.freeze({
@@ -79,8 +79,20 @@ export function validateReading(reading) {
       'Enter a positive breathing rate with at most one decimal place (maximum 300).');
   }
   requireValue(typeof reading.notes === 'string' && reading.notes.length <= 2000, 'Notes must contain at most 2,000 characters.');
+  let timing = {};
+  if ('tapOffsetsMs' in reading) {
+    const offsets = reading.tapOffsetsMs;
+    requireValue(source === 'timed' && Array.isArray(offsets) && offsets.length === reading.count,
+      'Recorded tap timing must match a timed breath count.');
+    for (let i = 0; i < offsets.length; i++) {
+      requireValue(Object.hasOwn(offsets, i) && Number.isInteger(offsets[i]) && offsets[i] >= 0 &&
+        offsets[i] < reading.seconds * 1000 && (i === 0 || offsets[i] >= offsets[i - 1]),
+      'Recorded tap timing must be ordered milliseconds within the measurement.');
+    }
+    timing = { tapOffsetsMs: [...offsets] };
+  }
   return { id: reading.id, dogId: reading.dogId, date: reading.date, count: reading.count,
-    seconds: reading.seconds, rate: reading.rate, notes: reading.notes, source, context, uncertain };
+    seconds: reading.seconds, rate: reading.rate, notes: reading.notes, source, context, uncertain, ...timing };
 }
 
 // datetime-local is interpreted in this device's time zone; reject normalization of
@@ -116,11 +128,15 @@ export function manualDialogAction({ event, dirty, cancelable = false, confirmOp
 }
 
 export function validateBackup(input) {
-  requireValue(input && input.format === FORMAT && [1, VERSION].includes(input.version),
-    'Choose a Pawbreath version 1 or 2 backup (.json).');
+  requireValue(input && input.format === FORMAT && [1, 2, VERSION].includes(input.version),
+    'Choose a Pawbreath version 1, 2 or 3 backup (.json).');
   requireValue(Array.isArray(input.dogs) && Array.isArray(input.readings), 'This backup is incomplete.');
   const dogs = input.dogs.map(validateDog);
-  const readings = input.readings.map(validateReading);
+  const readings = input.readings.map(reading => {
+    requireValue(input.version === VERSION || !reading || !('tapOffsetsMs' in Object(reading)),
+      'Recorded tap timing requires a version 3 backup.');
+    return validateReading(reading);
+  });
   const dogIds = new Set(dogs.map(dog => dog.id));
   requireValue(dogIds.size === dogs.length, 'This backup contains duplicate dog IDs.');
   requireValue(new Set(readings.map(reading => reading.id)).size === readings.length,
@@ -130,7 +146,7 @@ export function validateBackup(input) {
 }
 
 export function makeBackup(snapshot) {
-  return { ...validateBackup({ format: FORMAT, version: VERSION, ...snapshot }), exportedAt: new Date().toISOString() };
+  return { ...validateBackup({ ...snapshot, format: FORMAT, version: VERSION }), exportedAt: new Date().toISOString() };
 }
 
 export async function readBackupFile(file) {

@@ -6,6 +6,8 @@ User-visible changes are recorded here. Unreleased changes have not been deploye
 
 ### Added
 
+- New timed readings retain individual accepted tap times in milliseconds. Backup format 3 preserves them and imports older formats without inventing timing. App version is now 1.2.0 (unreleased).
+
 - Dedicated counting view with a large stationary target, separate Undo/Cancel controls and optional quiet tap sounds. Background navigation is unavailable during a count; Escape cancels it. Single-finger movement on the target no longer scrolls the page, while pinch zoom remains available.
 
 ### Fixed

@@ -77,3 +77,7 @@ The original verification run did not deploy; the dated correction above records
 Shared household access and automatic recovery need a separate design. The direction is local IndexedDB plus a durable upload queue, authenticated Worker API, D1 shared records and private R2 photos/backups. Preserve stable client IDs and server-verified authorship; use revisions, deletion markers and a server-ordered change cursor rather than device clocks alone. Migration requires explicit household mapping; retain local-only use and distinguish local saves from server acknowledgement. Independent retained backups and tested restore are required alongside sync. Authentication, retention and permissions remain undecided; no such resources are created here.
 
 Vet reports, reading corrections/profile archiving, household reminders and external historical imports remain outside this release. Camera detection and medication scheduling are deferred.
+
+### 2026-11-14 timing compatibility correction
+
+The [recorded tap replay plan](20261114-feature-breath-timing-replay.md) supersedes the format-2 recovery decision: new exports use format 3 and preserve optional millisecond offsets; formats 1/2 import without timing. IndexedDB remains schema 1. Old apps can strip timing during export, so rollback after new recordings is unsupported.

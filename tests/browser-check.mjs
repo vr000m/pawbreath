@@ -181,17 +181,20 @@ await check('Ticking tap sound reports real audio availability and never blocks 
 });
 await check('30-second count, undo, deadline, save and persisted result', async () => {
   $('#start').click();
-  for(let i=0;i<13;i++) $('#breath-button').click();
+  const expectedOffsets = Array.from({length:12}, (_,i) => 500 + i * 1234);
+  for(let i=0;i<13;i++) { fakeNow = 500.9 + i * 1234; $('#breath-button').click(); }
   $('#undo').click();
   assert($('#counter-number').textContent === '12', 'Undo count wrong');
   fakeNow = 30000;
   $('#breath-button').click();
   assert(pending.count === 12 && pending.rate === 24, 'Deadline tap incorrectly counted');
+  assert(JSON.stringify(pending.tapOffsetsMs) === JSON.stringify(expectedOffsets), 'Undo/deadline changed accepted timing');
   $('#reading-notes').value = 'Quiet <script>window.unwanted = true<\\/script>';
   $('#reading-context').value = 'asleep';
   $('#reading-uncertain').checked = true;
   await $('#save-reading').onclick();
   const savedReading = (await readAll(db)).readings[0];
+  assert(JSON.stringify(savedReading.tapOffsetsMs) === JSON.stringify(expectedOffsets), 'Save lost timing');
   assert(savedReading.context === 'asleep' && savedReading.uncertain && savedReading.source === 'timed', 'Context not saved');
   assert((await readAll(db)).readings.length === 1, 'Saved reading missing');
   assert(!pending, 'Result not cleared after commit');
@@ -212,6 +215,8 @@ await check('60-second count and failed save retains the result', async () => {
   fakeNow = 100000;
   tick();
   assert(pending.rate === 19 && pending.seconds === 60, '60-second rate wrong');
+  const expectedTiming = JSON.stringify(pending.tapOffsetsMs);
+  const pendingId = pending.id;
   const originalPut = IDBObjectStore.prototype.put;
   IDBObjectStore.prototype.put = function(...args) {
     const request = originalPut.apply(this,args);
@@ -220,10 +225,11 @@ await check('60-second count and failed save retains the result', async () => {
   };
   try { await $('#save-reading').onclick(); }
   finally { IDBObjectStore.prototype.put = originalPut; }
-  assert(pending?.count === 19, 'Failed save discarded result');
+  assert(pending?.count === 19 && JSON.stringify(pending.tapOffsetsMs) === expectedTiming, 'Failed save discarded result or timing');
   assert((await readAll(db)).readings.length === 1, 'Aborted save committed');
   await $('#save-reading').onclick();
   assert((await readAll(db)).readings.length === 2, 'Retry failed');
+  assert(JSON.stringify((await readAll(db)).readings.find(r=>r.id===pendingId).tapOffsetsMs) === expectedTiming, 'Retry changed timing');
 });
 await check('Zero-breath session cannot produce a reading', async () => {
   fakeNow = 200000;
@@ -455,7 +461,16 @@ await check('Backup round-trip restores into an empty database', async () => {
   await restoreBackup(fresh,JSON.parse(JSON.stringify(saved)));
   const restored = await readAll(fresh);
   assert(restored.dogs.length === saved.dogs.length && restored.readings.length === saved.readings.length, 'Round-trip lost data');
+  assert(JSON.stringify(restored.readings) === JSON.stringify(saved.readings), 'Round-trip changed records or timing');
   fresh.close();
+});
+await check('Save copies caller timing before asynchronous storage', async () => {
+  const input = {...record,id:'timing-copy',count:3,rate:6,tapOffsetsMs:[10,1300,29999]};
+  const saved = saveReading(db,input);
+  input.tapOffsetsMs[0] = 999; input.tapOffsetsMs.push(30000);
+  await saved;
+  assert(JSON.stringify((await readAll(db)).readings.find(r=>r.id===input.id).tapOffsetsMs) === '[10,1300,29999]', 'Save aliased caller timing');
+  await deleteReading(db,input.id);
 });
 // Smoke check only: Chromium already shrinks the select without the minmax(0,1fr)/min-width:0 rules, so this
 // passes on the unfixed CSS. The structure test on those rules is the regression guard.

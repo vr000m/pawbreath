@@ -6,12 +6,47 @@ import { validateDog, validateReading, validateBackup, makeBackup, readBackupFil
 
 const dog = { id: 'dog-1', name: 'Milo', threshold: null, photo: '' };
 const reading = { id: 'reading-1', dogId: dog.id, date: '2026-11-12T21:00:00.000Z', count: 12, seconds: 30, rate: 24, notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
-const backup = () => ({ format: 'pawbreath', version: 2, dogs: [{ ...dog }], readings: [{ ...reading }] });
+const backup = () => ({ format: 'pawbreath', version: 3, dogs: [{ ...dog }], readings: [{ ...reading }] });
 
 test('rate calculation retains raw count and handles both supported durations', () => {
   assert.equal(respiratoryRate(12, 30), 24);
   assert.equal(respiratoryRate(19, 60), 19);
   assert.deepEqual(validateReading(reading), reading);
+});
+
+test('tap traces are dense, ordered, timed-only and copied without fabricating legacy timing', () => {
+  const timed = { ...reading, count: 3, rate: 6, tapOffsetsMs: [0, 0, 29999] };
+  const checked = validateReading(timed);
+  timed.tapOffsetsMs[0] = 20;
+  assert.deepEqual(checked.tapOffsetsMs, [0, 0, 29999]);
+  checked.tapOffsetsMs[1] = 10;
+  assert.deepEqual(timed.tapOffsetsMs, [20, 0, 29999]);
+  assert.ok(!Object.hasOwn(validateReading(reading), 'tapOffsetsMs'));
+  for (const offsets of [null, undefined, [], [0, 1], [0, 1, 2, 3], [-1, 0, 1],
+    [0, 30000, 30000], [0, 2, 1], [0, 1.1, 2], [0, NaN, 2], [0, Infinity, 2],
+    [0, '1', 2], [0, , 2], new Uint16Array([0, 1, 2])]) {
+    assert.throws(() => validateReading({ ...timed, tapOffsetsMs: offsets }));
+  }
+  assert.throws(() => validateReading({ ...timed, source: 'manual', count: null, seconds: null }));
+  assert.deepEqual(validateReading({ ...timed, seconds: 60, rate: 3, tapOffsetsMs: [1, 30000, 59999] }).tapOffsetsMs,
+    [1, 30000, 59999]);
+});
+
+test('format 3 preserves traces; versions 1 and 2 stay untimed and cannot smuggle timing', () => {
+  const traced = { ...reading, count: 3, rate: 6, tapOffsetsMs: [3, 1301, 29000] };
+  const input = { ...backup(), readings: [traced] };
+  const exported = makeBackup(input);
+  assert.deepEqual(validateBackup(JSON.parse(JSON.stringify(exported))), input);
+  traced.tapOffsetsMs[0] = 4;
+  assert.equal(exported.readings[0].tapOffsetsMs[0], 3);
+  assert.equal(toCsv(input), toCsv({ ...input, readings: [{ ...traced, tapOffsetsMs: undefined }] }));
+  for (const version of [1, 2]) {
+    const legacy = { ...backup(), version };
+    assert.equal(validateBackup(legacy).version, 3);
+    assert.ok(!Object.hasOwn(validateBackup(legacy).readings[0], 'tapOffsetsMs'));
+    assert.equal(makeBackup(legacy).version, 3);
+    assert.throws(() => validateBackup({ ...input, version }), /version 3/);
+  }
 });
 
 test('backup round-trip preserves Unicode, multiline notes, and literal markup', () => {
@@ -70,7 +105,7 @@ test('file reader rejects invalid JSON, invalid records and unreadable files', a
 
 test('reject incompatible, incomplete, duplicate and orphaned backups', () => {
   for (const modify of [
-    value => { value.version = 3; },
+    value => { value.version = 4; },
     value => { delete value.dogs; },
     value => { value.dogs.push({ ...dog }); },
     value => { value.readings.push({ ...reading }); },
@@ -132,7 +167,7 @@ test('version 1 backups migrate without guessing measurement context', () => {
   const legacy = { ...reading };
   delete legacy.source; delete legacy.context; delete legacy.uncertain;
   const migrated = validateBackup({ format: 'pawbreath', version: 1, dogs: [dog], readings: [legacy] });
-  assert.equal(migrated.version, 2);
+  assert.equal(migrated.version, 3);
   assert.deepEqual(migrated.readings[0], reading);
 });
 
