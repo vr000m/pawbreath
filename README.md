@@ -10,9 +10,9 @@ Local preview with sample data. See the [changelog](CHANGELOG.md) for changes an
 
 On iPhone, open the hosted HTTPS site in Safari and choose **Share → Add to Home Screen**. On Android, use **Install app** or **Add to Home screen**. Open online once and check for **Offline ready** before relying on offline loading.
 
-Add a dog, wait until they are settled or asleep, and start a count. Start opens a dedicated counting view: tap anywhere in the large green area once per breath while watching your dog. Undo and Cancel stay separate. When the timer ends, review the result, then save. Leaving the app cancels an active count; zero-breath counts cannot be saved. Failed saves retain the result for retry. Manual entries record a rate and original local date/time without inventing a count or duration; future dates and years before 1970 are rejected.
+Add a dog, wait until they are settled or asleep, and start a count. Start opens a dedicated counting view: tap anywhere in the large area once per breath while watching your dog. Undo and Cancel stay separate. When the timer ends, review the result, then save. Leaving the app cancels an active count; zero-breath counts cannot be saved. Failed saves retain the result for retry. Manual entries record a rate and original local date/time without inventing a count or duration; future dates and years before 1970 are rejected.
 
-Enable **Quiet tap sound** before starting for optional feedback. It is off on page load and stays selected across counts until reload. Device volume, mute settings or unavailable audio can silence it; counting still works without sound.
+Enable **Quiet tap sound** before starting for optional feedback. Ticking it checks whether this device can play audio: the status line says **Tap sound on** only when audio is running, otherwise “Tap sound is not available on this device” and the box unticks. It is off on page load and stays selected across counts until reload. If audio is interrupted mid-count (for example by a call), later taps try to restore it. Device volume or mute settings can still silence it; counting works without sound.
 
 Readings can be labelled asleep, resting, restless or context not recorded, with an optional uncertainty flag. History applies date/context filters to both chart and list. Saving an entry clears conflicting filters so it stays visible. Profiles are editable; reading deletion asks for confirmation.
 
@@ -30,7 +30,7 @@ New backups use format 2 and accept version 1 imports. Older app versions cannot
 
 Settings shows running/published versions, the last successful check and **Check for updates**. Checks also run on launch, reconnection and resumption. **Offline ready** means the app is cached, not necessarily current.
 
-When **Update ready** appears (the notice stays behind the active counting view until the count ends), save your work, fully close the installed app and all Pawbreath browser tabs, then reopen. Downloaded updates can activate offline and retain the journal. They never force a reload during a count or form edit. Unsaved work does not survive intentionally closing the app. Older releases gain the version panel only after completing this upgrade cycle.
+When **Update ready** appears (a notice that arrives during a count stays behind the counting view and is announced to screen readers once the count ends), save your work, fully close the installed app and all Pawbreath browser tabs, then reopen. Downloaded updates can activate offline and retain the journal. They never force a reload during a count or form edit. Unsaved work does not survive intentionally closing the app. Older releases gain the version panel only after completing this upgrade cycle.
 
 ## Develop and verify
 

@@ -55,3 +55,51 @@ test('late audio resume across cancelled and restarted sessions never replays ta
     f.sound.stop();
   }
 });
+
+test('an interrupted context is resumed by later taps without blocking, throwing or queueing tones', async () => {
+  const f=fixture(); f.sound.prepare(true);
+  assert.equal(f.sound.play(),true); assert.equal(f.calls.starts,1);
+  // A call, Siri or Control Center interrupts audio mid-count.
+  f.context.state='interrupted'; const before=f.calls.resumes;
+  f.context.resume=()=>{ f.calls.resumes++; return Promise.resolve().then(()=>{ f.context.state='running'; }); };
+  assert.equal(f.sound.play(),false, 'a tap during the interruption may stay silent');
+  assert.equal(f.calls.resumes,before+1, 'a tap on a non-running context must request resume');
+  assert.equal(f.calls.starts,1);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.calls.starts,1, 'resuming must not replay the silent tap');
+  assert.equal(f.sound.play(),true, 'later taps recover once the context runs'); assert.equal(f.calls.starts,2);
+  assert.equal(f.calls.resumes,before+1, 'a running context needs no resume');
+  for (const resume of [()=>Promise.reject(Error('denied')), ()=>{ throw Error('gone'); }]) {
+    f.context.state='suspended'; f.context.resume=resume;
+    assert.doesNotThrow(()=>assert.equal(f.sound.play(),false));
+    await new Promise(resolve=>setImmediate(resolve)); // An unhandled rejection would fail the test run.
+  }
+  assert.equal(f.calls.starts,2, 'exactly one tone per accepted tap that found a running context');
+});
+
+test('stop suspends the context for reuse and no tone follows it', async () => {
+  const f=fixture(); let suspends=0;
+  f.sound.prepare(true); f.context.suspend=()=>{ suspends++; f.context.state='suspended'; return Promise.resolve(); };
+  f.sound.play(); f.sound.stop();
+  assert.equal(suspends,1); assert.equal(f.sound.play(),false); assert.equal(f.calls.starts,1);
+  f.sound.prepare(true); assert.equal(f.calls.created,1, 'context reused, not closed'); assert.ok(f.calls.resumes>=1);
+  f.context.suspend=()=>Promise.reject(Error('busy')); assert.doesNotThrow(()=>f.sound.stop());
+  f.context.suspend=()=>{ throw Error('gone'); }; assert.doesNotThrow(()=>f.sound.stop());
+  await new Promise(resolve=>setImmediate(resolve));
+  createTapSound(undefined).stop(); // No context yet.
+});
+
+test('detect reports whether audio actually runs', async () => {
+  assert.equal(await createTapSound(undefined).detect(), false, 'missing Web Audio');
+  assert.equal(await createTapSound(class { constructor(){ throw Error('unavailable'); } }).detect(), false, 'throwing constructor');
+  assert.equal(await createTapSound(class { constructor(){ this.state='suspended'; } resume(){ return Promise.reject(Error('denied')); } }).detect(), false, 'rejected resume');
+  assert.equal(await createTapSound(class { constructor(){ this.state='suspended'; } resume(){ throw Error('denied'); } }).detect(), false, 'throwing resume');
+  assert.equal(await createTapSound(class { constructor(){ this.state='suspended'; } resume(){ return Promise.resolve(); } }).detect(), false, 'resume resolved but still suspended');
+  let created=0;
+  const Later=class { constructor(){ created++; this.state='suspended'; } resume(){ return Promise.resolve().then(()=>{ this.state='running'; }); } };
+  const sound=createTapSound(Later);
+  assert.equal(await sound.detect(), true, 'suspended then running');
+  assert.equal(await sound.detect(), true); assert.equal(created,1, 'detect reuses the context');
+  assert.equal(sound.play(),false, 'detect alone never enables tones');
+  const f=fixture(); assert.equal(await f.sound.detect(), true, 'already running');
+});

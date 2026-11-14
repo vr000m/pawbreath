@@ -31,6 +31,10 @@ const counterCard = document.querySelector('.counter-card');
 const counterHome = document.createComment('Counter home');
 counterCard.before(counterHome);
 const countingDialog = document.querySelector('#counting-dialog');
+const soundOnStatus = 'Tap sound on. Device volume or mute may prevent sound.';
+const soundUnavailableStatus = 'Tap sound is not available on this device.';
+let soundCheck = 0;
+let noticeAnnouncement;
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel('pawbreath-updates') : null;
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -286,12 +290,25 @@ function leaveCountingView() {
   if (countingDialog.open) countingDialog.close();
   if (moved) counterHome.after(counterCard);
   tapSound.stop();
+  if (moved) announceUpdateNotice();
   return moved;
+}
+
+// A notice that arrived during a count was inert behind the modal and never announced.
+// Clear and restore its text once the modal closes so the status live region announces it.
+function announceUpdateNotice() {
+  const notice = $('#update-notice');
+  const message = notice.textContent;
+  if (notice.hidden || !message) return;
+  clearTimeout(noticeAnnouncement);
+  notice.textContent = '';
+  noticeAnnouncement = setTimeout(() => { notice.textContent = message; }, 100);
 }
 
 function resetCounter(message = '') {
   const wasCounting = leaveCountingView();
   $('#counter-number').textContent = 'Ready';
+  $('#counter-label').textContent = 'Count one breath';
   $('#timer-label').textContent = `${duration}-second measurement`;
   $('#timer-progress').value = 0;
   $('#timer-progress').max = duration;
@@ -349,6 +366,7 @@ function completeCount() {
   $('#result-threshold').textContent = exceeds ? `At or above the threshold you entered: ${dog().threshold} breaths/min. Follow the guidance your vet gave you.` : 'Review your count, add any notes, and save this moment.';
   $('#result-threshold').className = exceeds ? 'threshold-note' : 'muted';
   $('#counter-status').textContent = 'Reading ready to save.';
+  $('#counter-label').textContent = finished.count === 1 ? 'breath counted' : 'breaths counted';
   $('#counter-instruction').textContent = `${finished.count} breaths counted in ${finished.seconds} seconds.`;
   $('#save-reading').focus();
 }
@@ -373,10 +391,8 @@ $('#start').onclick = async () => {
   $('#breath-button').disabled = false;
   $('#breath-button').classList.add('active');
   $('#counter-number').textContent = '0';
-  $('#counter-instruction').textContent = 'Watch your dog. Tap the green area once per breath.';
-  $('#counter-status').textContent = $('#tap-sound').checked
-    ? 'Tap sound on. Device volume or mute may prevent sound.'
-    : 'Keep this screen open while counting.';
+  $('#counter-instruction').textContent = 'Watch your dog. Tap the large area once per breath.';
+  $('#counter-status').textContent = $('#tap-sound').checked ? soundOnStatus : 'Keep this screen open while counting.';
   countingDialog.append(counterCard);
   try { countingDialog.showModal(); }
   catch { cancelCount('Could not open counting. Please try again.'); return; }
@@ -398,6 +414,23 @@ $('#breath-button').onclick = event => {
   $('#counter-number').textContent = session.count;
   $('#undo').disabled = false;
   tapSound.play();
+};
+// Ticking the box is a user gesture: start audio here and report what this device actually allows.
+// Unavailable audio unticks the box, so the checkbox always matches whether a count will try to sound.
+$('#tap-sound').onchange = async () => {
+  const box = $('#tap-sound');
+  const attempt = ++soundCheck;
+  const status = $('#counter-status');
+  if (!box.checked) {
+    if (!session && !pending && [soundOnStatus, soundUnavailableStatus].includes(status.textContent)) {
+      status.textContent = dog() ? 'Start the timer, then tap for each breath.' : 'Add your dog to begin.';
+    }
+    return;
+  }
+  const available = await tapSound.detect();
+  if (attempt !== soundCheck || !box.checked) return;
+  if (!available) { box.checked = false; tapSound.prepare(false); }
+  if (!pending) status.textContent = available ? soundOnStatus : soundUnavailableStatus;
 };
 $('#breath-button').onkeydown = event => { if (event.repeat) event.preventDefault(); };
 $('#undo').onclick = () => {
@@ -703,6 +736,7 @@ const updates = createUpdateMonitor({ storage: updateStorage, onChange(state) {
   $('#last-update-check').textContent = state.checked
     ? `Last successful check: ${dateFormat.format(new Date(state.checked))}` : 'No successful update check yet.';
   $('#check-updates').disabled = state.checking;
+  clearTimeout(noticeAnnouncement);
   $('#update-notice').hidden = !state.waiting && !state.activationChanged;
   $('#update-notice').textContent = state.message;
   $('#cache-status').textContent = !state.supported ? 'Offline loading is unavailable in this browser. Use a current browser over HTTPS.'

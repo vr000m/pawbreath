@@ -69,22 +69,27 @@ await check('History has its own dog picker that shares the selection with Measu
 let fakeNow = 0;
 Object.defineProperty(performance, 'now', {configurable:true, value:()=>fakeNow});
 await check('The breath action keeps its visible name and exposes the count through every state', async () => {
-  const verify = value => {
+  const verify = (value, label = 'Count one breath') => {
     const button = $('#breath-button');
-    assert($('#counter-label').textContent === 'Count one breath', 'Visible action label changed');
+    assert($('#counter-label').textContent === label, 'Visible label is ' + $('#counter-label').textContent + ', expected ' + label);
     assert(button.getAttribute('aria-labelledby') === 'counter-label', 'Name does not use the visible label');
     assert(button.getAttribute('aria-describedby') === 'counter-number', 'Count is not exposed as a description');
     assert($('#counter-number').textContent === value, 'Count description differs from the display');
   };
   verify('Ready');
   $('#start').click(); verify('0');
+  assert($('#counter-instruction').textContent === 'Watch your dog. Tap the large area once per breath.', 'Instruction relies on colour or changed');
   $('#breath-button').click(); verify('1');
   $('#undo').click(); verify('0');
   $('#cancel').click(); verify('Ready');
   $('#start').click(); $('#breath-button').click();
-  fakeNow = 30000; tick(); verify('1');
+  fakeNow = 30000; tick(); verify('1', 'breath counted');
   assert(!countingDialog.open && document.activeElement === $('#save-reading'), 'Completion did not restore result focus');
   const discard = $('#discard').onclick(); $('#confirm-yes').click(); await discard;
+  verify('Ready');
+  fakeNow = 0; $('#start').click(); for (let i = 0; i < 13; i++) $('#breath-button').click();
+  fakeNow = 30000; tick(); verify('13', 'breaths counted');
+  const discardMany = $('#discard').onclick(); $('#confirm-yes').click(); await discardMany;
   verify('Ready'); fakeNow = 0;
 });
 await check('Counting dialog restores the card on every exit and isolates later sessions', async () => {
@@ -133,20 +138,46 @@ await check('Delayed audio never blocks counting or replays tones into a later s
   try {
     $('#tap-sound').checked=true; $('#start').click();
     assert(timer && session && countingDialog.open, 'Audio delayed the measurement');
+    const requested=resumes.length;
     $('#breath-button').click(); $('#breath-button').click();
     assert(session.count===2 && tones===0, 'Suspended audio affected counting');
+    assert(resumes.length===requested+2, 'A tap on suspended audio did not request resume');
     $('#cancel').click(); $('#tap-sound').checked=false; $('#start').click();
     const next=session;
     context.state='running'; resumes[0].resolve(); await sleep(0);
     assert(session===next && session.count===0 && tones===0, 'Late audio changed a later session');
     $('#breath-button').click(); assert(session.count===1 && tones===0, 'Opt-out made a tone');
     $('#cancel').click(); $('#tap-sound').checked=true; context.state='suspended'; $('#start').click();
-    resumes[1].reject(new Error('Audio denied')); await sleep(0);
+    resumes.at(-1).reject(new Error('Audio denied')); await sleep(0);
     $('#breath-button').click(); assert(session.count===1 && tones===0, 'Rejected audio blocked counting');
     context.state='running'; $('#breath-button').click();
     assert(session.count===2 && tones===1, 'Accepted click did not produce exactly one tone');
     $('#undo').click(); assert(session.count===1 && tones===1, 'Undo requested a breath tone');
   } finally { $('#cancel').click(); Object.assign(tapSound,original); $('#tap-sound').checked=checked; }
+});
+await check('Ticking tap sound reports real audio availability and never blocks counting', async () => {
+  const original = {...tapSound};
+  const box = $('#tap-sound');
+  const tickBox = async () => { box.checked = true; box.dispatchEvent(new Event('change')); await sleep(0); await sleep(0); };
+  class Running { constructor() { this.state='suspended'; this.currentTime=0; } resume() { this.state='running'; return Promise.resolve(); } suspend() { this.state='suspended'; return Promise.resolve(); }
+    createOscillator() { return {frequency:{},connect(){},disconnect(){},start(){},stop(){}}; } createGain() { return {gain:{setValueAtTime(){},linearRampToValueAtTime(){}},connect(){},disconnect(){}}; } }
+  try {
+    Object.assign(tapSound, createTapSound(undefined));
+    await tickBox();
+    assert($('#counter-status').textContent === 'Tap sound is not available on this device.', 'Missing audio status: ' + $('#counter-status').textContent);
+    assert(!box.checked, 'Unavailable sound left the box ticked');
+    $('#start').click(); $('#breath-button').click();
+    assert(session && session.count === 1 && $('#counter-status').textContent === 'Keep this screen open while counting.', 'Unavailable sound affected counting');
+    $('#cancel').click();
+    Object.assign(tapSound, createTapSound(class { constructor() { throw new Error('No audio'); } }));
+    await tickBox();
+    assert(!box.checked && $('#counter-status').textContent === 'Tap sound is not available on this device.', 'Throwing audio reported as on');
+    Object.assign(tapSound, createTapSound(Running));
+    await tickBox();
+    assert(box.checked && $('#counter-status').textContent === 'Tap sound on. Device volume or mute may prevent sound.', 'Available audio status: ' + $('#counter-status').textContent);
+    box.checked = false; box.dispatchEvent(new Event('change'));
+    assert($('#counter-status').textContent === 'Start the timer, then tap for each breath.', 'Unticking left a sound status');
+  } finally { Object.assign(tapSound, original); box.checked = false; }
 });
 await check('30-second count, undo, deadline, save and persisted result', async () => {
   $('#start').click();
@@ -290,9 +321,19 @@ await check('Checking and downloading updates preserves active counts, results a
   worker.state = 'installed';
   worker.dispatchEvent(new Event('statechange'));
   assert(session === active && !$('#update-notice').hidden, 'Waiting update interrupted count or hid notice');
+  const notice = $('#update-notice'), message = notice.textContent;
+  $('#breath-button').click();
+  assert(session === active && session.count === 2, 'Mid-count notice altered counting');
+  const announced = [];
+  const observer = new MutationObserver(records => { for (const r of records) for (const n of r.addedNodes) announced.push(n.textContent); });
+  observer.observe(notice, {childList:true, characterData:true, subtree:true});
   fakeNow += duration * 1000;
   tick();
   const completed = pending;
+  assert(completed?.count === 2, 'Mid-count notice changed the result');
+  await sleep(250); observer.disconnect();
+  assert(!countingDialog.open && announced.includes(message) && notice.textContent === message && !notice.hidden,
+    'Notice was not re-announced after the counting view closed: ' + JSON.stringify(announced));
   $('#reading-notes').value = 'Keep this unsaved note';
   await updates.check();
   assert(pending === completed && $('#reading-notes').value === 'Keep this unsaved note', 'Update lost result');

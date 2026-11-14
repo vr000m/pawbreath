@@ -6,12 +6,16 @@ User-visible changes are recorded here. Unreleased changes have not been deploye
 
 ### Added
 
-- Dedicated counting view with a large stationary green target, separate Undo/Cancel controls and optional quiet tap sounds. Background navigation is unavailable during a count; Escape cancels it. Single-finger movement on the target no longer scrolls the page, while pinch zoom remains available.
+- Dedicated counting view with a large stationary target, separate Undo/Cancel controls and optional quiet tap sounds. Background navigation is unavailable during a count; Escape cancels it. Single-finger movement on the target no longer scrolls the page, while pinch zoom remains available.
 
 ### Fixed
 
 - Active Undo/Cancel controls stay below the counting target, including with bottom safe-area insets. Short screens can scroll outside the target without controls intercepting breath taps; idle Start stays pinned.
 - The breath button shows a stable “Count one breath” label matching its accessible name, with the count exposed separately.
+- Ticking Quiet tap sound now shows whether sound is actually available; if not, it says “Tap sound is not available on this device.” and unticks.
+- Tap sound recovers on the next taps after a call or other interruption during a count.
+- An update notice that arrives during a count is announced to screen readers once the count ends.
+- The finished count reads “breaths counted” again, and the counting instruction says “Tap the large area” instead of naming a colour.
 
 ## Deployed build 63316a30696f — 14 November 2026
 
