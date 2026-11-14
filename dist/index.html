@@ -40,8 +40,8 @@
           <p id="counter-instruction">Wait until your dog is settled or asleep.</p>
           <p id="timer-label" class="timer-label">30-second measurement</p>
           <progress id="timer-progress" value="0" max="30" aria-label="Measurement progress"></progress>
-          <button id="breath-button" class="breath-circle" disabled aria-label="Count one breath">
-            <span id="counter-number">Ready</span><span id="counter-label">one tap per breath</span>
+          <button id="breath-button" class="breath-circle" disabled aria-labelledby="counter-label" aria-describedby="counter-number">
+            <span id="counter-number">Ready</span><span id="counter-label">Count one breath</span>
             <span class="breath-wave" aria-hidden="true">⌁</span>
           </button>
           <div id="counter-controls" class="counter-controls"><button id="start" class="primary" disabled>Start counting <span aria-hidden="true">→</span></button><button id="undo" class="secondary" hidden>Undo last tap</button><button id="cancel" class="text-button" hidden>Cancel</button></div>

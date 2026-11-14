@@ -276,7 +276,6 @@ function setLocked(locked) {
 
 function resetCounter(message = '') {
   $('#counter-number').textContent = 'Ready';
-  $('#counter-label').textContent = 'one tap per breath';
   $('#timer-label').textContent = `${duration}-second measurement`;
   $('#timer-progress').value = 0;
   $('#timer-progress').max = duration;
@@ -356,7 +355,6 @@ $('#start').onclick = async () => {
   $('#breath-button').disabled = false;
   $('#breath-button').classList.add('active');
   $('#counter-number').textContent = '0';
-  $('#counter-label').textContent = 'breaths counted';
   $('#counter-instruction').textContent = 'Tap the circle once for each breath.';
   $('#counter-status').textContent = 'Keep this screen open while counting.';
   $('#breath-button').focus();

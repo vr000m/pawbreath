@@ -66,6 +66,24 @@ await check('History has its own dog picker that shares the selection with Measu
 });
 let fakeNow = 0;
 Object.defineProperty(performance, 'now', {configurable:true, value:()=>fakeNow});
+await check('The breath action keeps its visible name and exposes the count through every state', async () => {
+  const verify = value => {
+    const button = $('#breath-button');
+    assert($('#counter-label').textContent === 'Count one breath', 'Visible action label changed');
+    assert(button.getAttribute('aria-labelledby') === 'counter-label', 'Name does not use the visible label');
+    assert(button.getAttribute('aria-describedby') === 'counter-number', 'Count is not exposed as a description');
+    assert($('#counter-number').textContent === value, 'Count description differs from the display');
+  };
+  verify('Ready');
+  $('#start').click(); verify('0');
+  $('#breath-button').click(); verify('1');
+  $('#undo').click(); verify('0');
+  $('#cancel').click(); verify('Ready');
+  $('#start').click(); $('#breath-button').click();
+  fakeNow = 30000; tick(); verify('1');
+  const discard = $('#discard').onclick(); $('#confirm-yes').click(); await discard;
+  verify('Ready'); fakeNow = 0;
+});
 await check('30-second count, undo, deadline, save and persisted result', async () => {
   $('#start').click();
   for(let i=0;i<13;i++) $('#breath-button').click();
@@ -364,44 +382,98 @@ await check('Smoke: a long dog name fits beside the phone picker controls', asyn
     assert(box('.history-toolbar .segments').right <= 320 && box('#add-dog').right <= 320, 'a control is pushed off a 320px screen');
   } finally { frame.remove(); }
 });
-// Mid-count geometry across phone heights. Margins measured in Chromium (circle bottom minus bar top): -12 at
-// 480, -2.2 at 561, -7.3 at 568, -12 from 641 to 666 (picker and instruction hidden), +11.6 at 667, -0.8 at 684.
-// Between 667 and 682 the circle dips into the bar's transparent top fade (pointer-events:none) but clears the
-// solid Undo button; without the short-phone block it reached Undo up to 663px. Below about 461px nothing clears.
-await check('Mid-count the whole circle clears the pinned Undo/Cancel bar from 480px to 844px tall', async () => {
+// Use the real stylesheet with only env() values replaced in this isolated frame. A viewport-only
+// test sees zero safe areas and missed Undo moving over the circle on installed phones.
+await check('Counting targets stay separate and reachable across phone sizes, safe areas and scrolling', async () => {
+  const layoutCss = ${JSON.stringify(readFileSync(new URL('app.css', dist), 'utf8'))};
   const frame = document.createElement('iframe');
-  frame.style.cssText = 'position:absolute;left:-10000px;top:0;width:320px;height:480px;border:0';
-  frame.srcdoc = '<!doctype html><html><head><meta name="viewport" content="width=device-width"><link rel="stylesheet" href="' + document.querySelector('link[rel=stylesheet]').href + '"></head><body>'
+  frame.style.cssText = 'position:absolute;left:-10000px;top:0;width:390px;height:844px;border:0';
+  frame.srcdoc = '<!doctype html><html><head><meta name="viewport" content="width=device-width"><style id="layout"></style></head><body>'
     + document.querySelector('header').outerHTML + document.querySelector('main').outerHTML + '</body></html>';
   const loaded = new Promise(resolve => frame.addEventListener('load', resolve, {once:true}));
   document.body.append(frame);
   try {
     await loaded;
-    const doc = frame.contentDocument;
-    for (let i = 0; i < 50 && !doc.styleSheets.length; i++) await sleep(50);
-    // The state counting() sets up: Measure shown, the circle active, Undo and Cancel in place of Start.
-    for (const section of doc.querySelectorAll('.page')) section.hidden = section.id !== 'measure-page';
-    doc.querySelector('#breath-button').classList.add('active');
-    doc.querySelector('#start').hidden = true;
-    doc.querySelector('#undo').hidden = false;
-    doc.querySelector('#cancel').hidden = false;
+    const doc = frame.contentDocument, win = frame.contentWindow;
+    const circle = doc.querySelector('#breath-button');
     const box = selector => doc.querySelector(selector).getBoundingClientRect();
-    // [width, height, what the circle must clear]
-    const cases = [[320,480,'#counter-controls'],[320,560,'#counter-controls'],[320,561,'#counter-controls'],[320,568,'#counter-controls'],
-      [360,640,'#counter-controls'],[360,641,'#counter-controls'],[360,660,'#counter-controls'],[360,666,'#counter-controls'],
-      [375,667,'#undo'],[360,680,'#undo'],[360,684,'#counter-controls'],[375,700,'#counter-controls'],[390,844,'#counter-controls']];
-    for (const [width, height, target] of cases) {
-      frame.style.width = width + 'px';
-      frame.style.height = height + 'px';
-      const at = width + 'x' + height + ': ';
-      assert(frame.contentWindow.matchMedia('(max-width:600px)').matches, at + 'the frame is not phone width');
-      // Guard: an unstyled frame puts the controls in flow below the circle and would pass vacuously.
-      assert(frame.contentWindow.getComputedStyle(doc.querySelector('#counter-controls')).position === 'sticky', at + 'the stylesheet did not apply (controls not sticky)');
-      const size = Math.min(225, Math.max(150, height * 0.27));
-      assert(Math.abs(box('#breath-button').height - size) < 1, at + 'the circle is not clamp-sized (' + box('#breath-button').height + ' vs ' + size + ')');
-      for (const selector of ['#timer-label', '#timer-progress', '#breath-button', '#counter-number', '#undo', '#cancel']) assert(box(selector).height > 0, at + selector + ' is not shown mid-count');
-      assert(box('#breath-button').bottom <= box(target).top + 0.5, at + target + ' covers the circle (' + box('#breath-button').bottom + ' > ' + box(target).top + ')');
+    for (const section of doc.querySelectorAll('.page')) section.hidden = section.id !== 'measure-page';
+    doc.querySelector('#update-notice').hidden = false;
+    doc.querySelector('#update-notice').textContent = 'Update ready. Save your work and reopen.';
+    const active = value => {
+      circle.classList.toggle('active', value); circle.disabled = !value;
+      doc.querySelector('#counter-number').textContent = value ? '123' : 'Ready';
+      doc.querySelector('#start').hidden = value;
+      doc.querySelector('#start').disabled = false;
+      for (const id of ['undo','cancel']) { doc.getElementById(id).hidden = !value; doc.getElementById(id).disabled = false; }
+    };
+    const apply = inset => {
+      doc.querySelector('#layout').textContent = layoutCss.replaceAll('env(safe-area-inset-bottom)', inset + 'px');
+    };
+    const viewportBottom = () => win.getComputedStyle(doc.querySelector('nav')).position === 'fixed' ? Math.min(win.innerHeight, box('nav').top) : win.innerHeight;
+    const reachable = selector => {
+      const element = doc.querySelector(selector);
+      element.scrollIntoView({block:'center'});
+      const r = box(selector), nav = box('nav');
+      assert(r.top >= -0.5 && r.bottom <= viewportBottom() + 0.5,
+        frame.dataset.case + selector + ' cannot be scrolled above navigation: ' + JSON.stringify({top:r.top,bottom:r.bottom,limit:viewportBottom()}));
+      const hit = doc.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      assert(element === hit || element.contains(hit), selector + ' does not receive its center tap');
+    };
+    const cases = [[320,480],[320,560],[320,561],[320,568],[360,640],[360,641],[360,660],[360,666],
+      [375,667],[360,680],[360,684],[375,700],[390,740],[390,844],[440,956],[844,390],[956,440],[390,420],[440,480]];
+    for (const [width,height] of cases) for (const inset of [0,20,34,48]) {
+      frame.style.width = width + 'px'; frame.style.height = height + 'px'; apply(inset);
+      const at = width + 'x' + height + ' inset ' + inset + ': '; frame.dataset.case=at;
+      active(false); win.scrollTo(0,0);
+      // Prove styling loaded; normal-flow rectangles alone could pass with no CSS.
+      assert(win.getComputedStyle(circle).borderRadius === '50%', at + 'circle stylesheet absent');
+      if (width <= 600) assert(win.getComputedStyle(doc.querySelector('#counter-controls')).position === 'sticky', at + 'idle Start stopped being sticky');
+      reachable('#start');
+      active(true); win.scrollTo(0,0);
+      assert(doc.documentElement.scrollWidth <= width, at + 'horizontal overflow');
+      for (const y of [0, height / 2, doc.documentElement.scrollHeight]) {
+        win.scrollTo(0,y);
+        const r=box('#breath-button');
+        for (const selector of ['#undo','#cancel']) {
+          const control=box(selector);
+          assert(r.bottom <= control.top + 0.5, at + selector + ' overlaps the circle');
+        }
+        // Hit-test actual circle points within the unobscured viewport, including its lower edge.
+        const nav=box('nav');
+        for (const fraction of [0.1,0.5,0.9]) {
+          const x=r.x+r.width/2, y=r.y+r.height*fraction;
+          if (y<0 || y>=viewportBottom()) continue;
+          const hit=doc.elementFromPoint(x,y);
+          assert(hit===circle || circle.contains(hit), at + 'a visible breath tap hits another element');
+        }
+      }
+      reachable('#breath-button'); reachable('#undo'); reachable('#cancel');
+      if ((width===390 && height===844) || (width===440 && height===956)) {
+        const r=box('#breath-button'),controls=box('#counter-controls');
+        assert(r.top>=0 && controls.bottom<=box('nav').top+0.5, at + 'primary portrait cannot show circle and controls together');
+      }
     }
+    // Stress safe-area-like top/side padding and larger control text on the primary profiles.
+    // These are synthetic constraints, not a claim that iOS exposes these exact values.
+    const stress=doc.createElement('style');
+    stress.textContent='body { padding:44px 20px 0; } button, input, select, textarea, #counter-label { font-size:20px !important; }';
+    doc.head.append(stress);
+    for (const [width,height] of [[390,844],[440,956],[844,390],[956,440]]) {
+      frame.style.width=width+'px'; frame.style.height=height+'px'; apply(34); active(true);
+      frame.dataset.case='large text/top-side padding '+width+'x'+height+': ';
+      assert(doc.documentElement.scrollWidth<=width,frame.dataset.case+'horizontal overflow');
+      reachable('#breath-button'); reachable('#undo'); reachable('#cancel');
+      assert(box('#breath-button').bottom<=box('#undo').top,frame.dataset.case+'Undo overlaps circle');
+    }
+    stress.remove();
+    // Mutation check: reproduce the old sticky behavior at the previously missed safe-area case.
+    frame.style.width='375px'; frame.style.height='667px'; apply(34); active(true); win.scrollTo(0,0);
+    const old=doc.createElement('style');
+    old.textContent='.counter-card:has(.breath-circle.active) .counter-controls { position:sticky !important; }';
+    doc.head.append(old);
+    assert(box('#breath-button').bottom>box('#undo').top+1,'Regression fixture no longer detects the old overlap');
+    old.remove();
   } finally { frame.remove(); }
 });
 await refresh();

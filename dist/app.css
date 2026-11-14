@@ -344,6 +344,10 @@ h1 {
   background:#cbdcbd;
 }
 
+.breath-circle.active .breath-wave {
+  display:none;
+}
+
 #counter-number {
   font-family:Georgia,serif;
   font-size:55px;
@@ -961,7 +965,7 @@ nav button[aria-current=page] svg .knob {
    Measure and History lead with the task: compact titles, Start counting in the thumb zone. */
 @media(max-width:600px) {
   :root {
-    /* Shared by the fixed tab bar and the sticky counter controls that sit on top of it. */
+    /* Shared by the fixed tab bar and the idle Start controls that sit above it. */
     --nav-h:68px;
     /* Shared by the dialog and the manual form's sticky Save/Cancel bar that bleeds to its edges. */
     --dialog-pad:23px;
@@ -1010,7 +1014,7 @@ nav button[aria-current=page] svg .knob {
   main {
     margin:0 20px;
     padding-top:16px;
-    padding-bottom:85px;
+    padding-bottom:calc(85px + env(safe-area-inset-bottom));
   }
   .page-heading {
     display:block;
@@ -1043,8 +1047,8 @@ nav button[aria-current=page] svg .knob {
     margin-bottom:0;
   }
   /* Mid-count the title is dead weight; give the tap target the room (the dog picker stays). The update
-     notice is held back the same way: shown mid-count it would push the circle under the pinned Undo/Cancel
-     bar. Visually hidden, not display:none, so screen readers keep the heading and still hear the notice,
+     notice is held back the same way to keep the counting area compact.
+     Visually hidden, not display:none, so screen readers keep the heading and still hear the notice,
      and both come back when the count ends. */
   #measure-page:has(.breath-circle.active) h1,
   main:has(.breath-circle.active) #update-notice {
@@ -1115,6 +1119,12 @@ nav button[aria-current=page] svg .knob {
   }
   .counter-controls>* {
     pointer-events:auto;
+  }
+  /* Start stays reachable while idle. During a count the controls belong below the circle,
+     in normal flow: sticky positioning can pull Undo over the target when safe areas grow.
+     Short screens may scroll; they must never turn a breath tap into an Undo tap. */
+  .counter-card:has(.breath-circle.active) .counter-controls {
+    position:static;
   }
   .text-button {
     min-height:44px;
@@ -1202,11 +1212,8 @@ nav button[aria-current=page] svg .knob {
   }
 }
 
-/* Short phones (666px of visible height or less, which covers the common 360x640-660 Android sizes):
-   mid-count, drop the duration picker and the instruction line so the whole circle clears the pinned
-   Undo/Cancel bar. With them shown, the circle reaches the solid Undo button up to 663px tall (16.6px at 641);
-   666 adds a little headroom. At 667 (iPhone SE 2nd gen, 8) and up to 682 the circle only dips into the bar's
-   transparent top fade, which ignores taps, so those phones keep the picker. */
+/* Short phones: reduce optional chrome while counting. Controls stay in normal flow,
+   so this breakpoint improves the initial view rather than enforcing tap safety. */
 @media(max-width:600px) and (max-height:666px) {
   #measure-page:has(.breath-circle.active) .counter-card .card-top,
   #measure-page:has(.breath-circle.active) #counter-instruction {
@@ -1214,11 +1221,8 @@ nav button[aria-current=page] svg .knob {
   }
 }
 
-/* Very short phones (an iPhone SE 1st gen in Safari is about 320x480): even without the picker and
-   instruction, the chrome above the circle, its 150px minimum and the pinned bar need about 557px, so the bar
-   would cover the circle and catch breath taps. Mid-count, also drop the dog picker (disabled while counting;
-   the dog was chosen before Start) and the empty heading's margin. The circle keeps its size: it already
-   holds the count at its minimum. */
+/* Very short phones also hide the disabled dog picker during a count. The user chose
+   the dog before Start; keeping the 150px minimum circle is more useful in this space. */
 @media(max-width:600px) and (max-height:560px) {
   #measure-page:has(.breath-circle.active) .dog-picker {
     display:none;

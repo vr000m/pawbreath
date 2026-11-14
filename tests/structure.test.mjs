@@ -272,7 +272,7 @@ test('the wide-screen picker block is the exact complement of the phone block, s
   assert.ok(!/min-width\s*:\s*60[01](?:\.\d+)?px/.test(stripComments(css)), 'use the negated phone query, not a min-width just above 600px');
 });
 
-test('an update notice shown mid-count on a phone is visually hidden, not removed, so the circle clears the pinned controls', () => {
+test('an update notice stays accessible while the phone counting layout stays compact', () => {
   const [phone] = atBlocks(read('app.css'), phoneQuery);
   const rule = rules(phone).find(({ selectors }) => selectors.some(part => /:has\(\s*\.breath-circle\.active\s*\)/.test(part) && /#update-notice\b/.test(part)));
   assert.ok(rule, 'a phone rule hides #update-notice while .breath-circle.active is present');
@@ -293,13 +293,12 @@ test('phone pickers let the select shrink, so a long dog name truncates instead 
   assert.ok(select && /min-width:\s*0\s*(?:;|$)/.test(select.body), 'the phone .dog-picker select has min-width:0');
 });
 
-test('very short phones drop the dog picker mid-count, so the 150px circle clears the pinned Undo/Cancel bar at 480px tall', () => {
+test('very short phones keep the compact counting layout without a disabled dog picker', () => {
   const css = read('app.css');
   const shortQuery = /^@media\s*\(\s*max-width\s*:\s*600px\s*\)\s*and\s*\(\s*max-height\s*:\s*(\d+)px\s*\)\s*$/;
   const heights = topLevel(css).map(({ prelude }) => prelude.match(shortQuery)?.[1]).filter(Boolean).map(Number);
-  // 666: the duration picker and instruction go (see the next test). Below about 557px the circle's 150px
-  // minimum, the chrome still shown above it and the pinned bar no longer fit, so a second step must start
-  // between there and 568 (a 568px-tall phone keeps its picker).
+  // Retain the established compact layout bands. The browser geometry test owns tap safety;
+  // these structure checks only guard when optional chrome is hidden.
   assert.ok(heights.includes(666), 'the short-phone block is kept');
   const veryShort = heights.filter(height => height >= 557 && height < 568);
   assert.equal(veryShort.length, 1, `one very-short-phone block between 557px and 567px tall (found ${heights.join(', ')})`);
@@ -308,13 +307,11 @@ test('very short phones drop the dog picker mid-count, so the 150px circle clear
   assert.ok(rule && /display:\s*none/.test(rule.body), 'the Measure dog picker is removed from the flow mid-count');
 });
 
-test('short phones drop the duration picker and instruction mid-count up to 666px tall, so the circle clears Undo', () => {
+test('short phones drop optional duration and instruction chrome during a count', () => {
   const css = read('app.css');
   const shortQuery = /^@media\s*\(\s*max-width\s*:\s*600px\s*\)\s*and\s*\(\s*max-height\s*:\s*(\d+)px\s*\)\s*$/;
   const heights = topLevel(css).map(({ prelude }) => prelude.match(shortQuery)?.[1]).filter(Boolean).map(Number);
-  // Measured in Chromium with the picker and instruction shown: the circle reaches the solid Undo button up to
-  // 663px tall (16.6px at 641). 667 (iPhone SE 2nd gen, 8) only dips into the bar's transparent fade and keeps
-  // its layout, so the step must start between 664 and 666.
+  // Keep the established short-phone breakpoint; active controls now stay in flow at every height.
   const short = heights.filter(height => height >= 664 && height < 667);
   assert.equal(short.length, 1, `one short-phone block between 664px and 666px tall (found ${heights.join(', ')})`);
   const [block] = atBlocks(css, new RegExp(`^@media\\s*\\(\\s*max-width\\s*:\\s*600px\\s*\\)\\s*and\\s*\\(\\s*max-height\\s*:\\s*${short[0]}px\\s*\\)\\s*$`));
