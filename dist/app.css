@@ -1125,7 +1125,8 @@ nav button[aria-current=page] svg .knob {
   main {
     padding-top:16px;
   }
-  #measure-page .eyebrow, #measure-page .subtitle, #history-page .eyebrow {
+  /* The picker right below names the dog, so History does not need its own subtitle on a phone. */
+  #measure-page .eyebrow, #measure-page .subtitle, #history-page .eyebrow, #history-page .subtitle {
     display:none;
   }
   #measure-page .page-heading, #history-page .page-heading {
@@ -1135,10 +1136,6 @@ nav button[aria-current=page] svg .knob {
     font-size:29px;
     letter-spacing:-1px;
     margin-bottom:0;
-  }
-  #history-page .subtitle {
-    margin:8px 0 0;
-    max-width:none;
   }
   #measure-page .dog-picker {
     padding-top:12px;
@@ -1180,6 +1177,7 @@ nav button[aria-current=page] svg .knob {
     grid-template-columns:minmax(0,1fr) auto;
     align-items:end;
     gap:0 10px;
+    margin-top:12px;
   }
   .history-toolbar .history-dog-picker {
     max-width:none;
