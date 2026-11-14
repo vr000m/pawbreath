@@ -20,6 +20,18 @@ test('every name a module imports is exported by the imported module', async () 
   }
 });
 
+test('readings are ordered newest first by one shared comparator', () => {
+  const app = read('app.js');
+  const replay = read('replay.mjs');
+  assert.ok(staticImports(app).some(({ path, names }) => path === './replay.mjs' && names.includes('newestFirst')), 'app.js must import newestFirst');
+  assert.match(replay, /^export function newestFirst\(/m);
+  // The comparator is the only hand-written date/id ordering; a second copy could drift from it.
+  const idTieBreak = /\.id\s*<\s*\w+\.(?:entry\.)?id\s*\?/g, dateOrder = /\bb\.(?:entry\.)?date\.localeCompare\(/g;
+  assert.equal((app.match(idTieBreak) || []).length + (app.match(dateOrder) || []).length, 0, 'app.js repeats the reading order');
+  assert.equal((replay.match(idTieBreak) || []).length, 1, 'replay.mjs repeats the id tie-break');
+  assert.equal((replay.match(dateOrder) || []).length, 1, 'replay.mjs repeats the date ordering');
+});
+
 test('the precache list contains every module, stylesheet, manifest and icon the shell loads', () => {
   const worker = read('sw.js');
   const assets = parseAssets(worker);

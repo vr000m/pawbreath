@@ -22,7 +22,7 @@ app = replaced(app, 'const updates = createUpdateMonitor({ storage: updateStorag
 app = replaced(app, '  prepareOffline();', "  $('#cache-status').textContent = 'Offline installation is excluded from the file-based test harness.';");
 app = replaced(app, "import { createTapSound } from './tap-sound.mjs';\n", '');
 const tapSoundSource = replaced(readFileSync(new URL('tap-sound.mjs', dist), 'utf8'), 'export ', '', true);
-app = replaced(app, "import { createReplayController, replayableReadings } from './replay.mjs';\n", '');
+app = replaced(app, "import { createReplayController, newestFirst, replayableReadings } from './replay.mjs';\n", '');
 const replaySource = replaced(replaced(readFileSync(new URL('replay.mjs', dist), 'utf8'),
   "import { validateReading } from './data.mjs';\n", ''), 'export ', '', true);
 const checks = `
@@ -181,6 +181,51 @@ await check('Ticking tap sound reports real audio availability and never blocks 
     box.checked = false; box.dispatchEvent(new Event('change'));
     assert($('#counter-status').textContent === 'Start the timer, then tap for each breath.', 'Unticking left a sound status');
   } finally { Object.assign(tapSound, original); box.checked = false; }
+});
+// Contract: unticking Quiet tap sound always leaves the context not running and no tone enabled, whether the
+// tick's detect() finished, is still pending, or a count already ended; counting never depends on audio.
+await check('Unticking tap sound suspends audio in every idle state without affecting counting', async () => {
+  const original = {...tapSound};
+  const box = $('#tap-sound');
+  let context, suspends = 0, tones = 0, deferred = false;
+  const pendingResumes = [];
+  class Audio {
+    constructor() { context = this; this.state = 'suspended'; this.currentTime = 0; }
+    // Operations apply in call order: a suspend requested after resume wins, as in a real AudioContext.
+    resume() { const at = suspends; return new Promise(resolve => {
+      const settle = () => { if (suspends === at) this.state = 'running'; resolve(); };
+      if (deferred) pendingResumes.push(settle); else settle(); }); }
+    suspend() { suspends++; this.state = 'suspended'; return Promise.resolve(); }
+    createOscillator() { tones++; return {frequency:{},connect(){},disconnect(){},start(){},stop(){}}; }
+    createGain() { return {gain:{setValueAtTime(){},linearRampToValueAtTime(){}},connect(){},disconnect(){}}; }
+  }
+  const setBox = checked => { box.checked = checked; box.dispatchEvent(new Event('change')); };
+  const settle = async () => { pendingResumes.splice(0).forEach(resolve => resolve()); await sleep(0); await sleep(0); };
+  const cells = {
+    'ticked, audio running': async () => { setBox(true); await settle(); assert(context.state === 'running', 'tick did not start audio'); },
+    'ticked, detect still pending': async () => { deferred = true; setBox(true); },
+    'ticked, after a finished count': async () => {
+      setBox(true); await settle(); $('#start').click(); $('#breath-button').click(); $('#cancel').click(); setBox(true); await settle();
+      assert(context.state === 'running', 're-tick did not resume audio'); }
+  };
+  try {
+    for (const [cell, arrange] of Object.entries(cells)) {
+      context = undefined; deferred = false; pendingResumes.length = 0;
+      Object.assign(tapSound, createTapSound(Audio));
+      await arrange();
+      const before = suspends;
+      setBox(false); await settle();
+      assert(suspends > before, cell + ': unticking did not request suspend');
+      assert(context.state !== 'running', cell + ': audio still running after untick (' + context.state + ')');
+      assert(!box.checked && $('#counter-status').textContent !== 'Tap sound on. Device volume or mute may prevent sound.', cell + ': stale detect re-ticked the box or status');
+      const made = tones;
+      $('#start').click(); $('#breath-button').click();
+      assert(session && session.tapOffsetsMs.length === 1 && tones === made, cell + ': unticked count sounded or failed to count');
+      $('#cancel').click();
+    }
+    Object.assign(tapSound, createTapSound(undefined));
+    setBox(false); await settle(); // Never ticked, no audio: unticking must not throw.
+  } finally { if (session) $('#cancel').click(); Object.assign(tapSound, original); box.checked = false; }
 });
 await check('30-second count, undo, deadline, save and persisted result', async () => {
   $('#start').click();

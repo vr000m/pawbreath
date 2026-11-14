@@ -76,7 +76,7 @@ Active controls now stay in normal flow below the circle at every phone height; 
 
 ## Verification — 14 November 2026
 
-Build `02a944e1bc7a` (version 1.1.0):
+Superseded intermediate build `02a944e1bc7a` of unreleased 1.2.0 (it reported version 1.1.0 at the time; the current build is in `dist/release.json`). Counts below are a historical snapshot at that build:
 
 - `npm test` / `just deploy-check`: 68 tests pass, metadata/syntax checks pass, Wrangler dry run succeeds without deployment.
 - Browser harness: 21 checks pass. Geometry covers 19 viewport sizes × four bottom insets (0/20/34/48px), three scroll positions, target hit-testing and reachable actions. Four primary portrait/landscape profiles also exercise larger text and simulated top/side padding. Restoring sticky active controls reproduces the old overlap at 375×667 with inset 34px.

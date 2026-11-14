@@ -83,10 +83,10 @@ A browser cannot render separate pulses for taps closer than a display frame; st
 
 ## Final results — 14 November 2026
 
-Unreleased 1.2.0 build `edf79fb91c75` (previously `b46ba9c9399c` and `24ef303881c6`; see the code-review fixes and layout follow-up below), stacked on Claude's `5266564`. No deployment, merge, push or PR mutation.
+Unreleased 1.2.0 build `c16a4ce624d5` (previously `edf79fb91c75`, `b46ba9c9399c` and `24ef303881c6`; see the code-review fixes, layout follow-up and review-gauntlet round 1 below), stacked on Claude's `5266564`. No deployment, merge, push or PR mutation.
 
-- `npm test` and `just deploy-check`: 81 tests pass; metadata/syntax checks and Wrangler dry run pass. Browser harness: 26 checks pass (the replay check now also asserts stable layout), including save/restore timing equality, save failure/retry, caller mutation, per-point and newest-first replay, same-date points, context/export separation, resize, reduced motion and all cancellation paths.
-- Real Chromium touch profiles at 390×844 and 440×956: a service-worker upgrade from 1.1.0 build `6379aad6d342` waits while a count/form is active. After closure, 1.2.0 retains the exact old journal. New recordings retain offsets including Undo, and replay after an offline reload. No browser errors; no horizontal overflow; replay controls are at least 44px tall. Screenshots inspected. These are emulations, not physical Safari checks.
+- `npm test` and `just deploy-check`: 86 tests pass; metadata/syntax checks and Wrangler dry run pass. Browser harness: 27 checks pass (the replay check now also asserts stable layout; the untick check covers audio release), including save/restore timing equality, save failure/retry, caller mutation, per-point and newest-first replay, same-date points, context/export separation, resize, reduced motion and all cancellation paths.
+- Real Chromium touch profiles at 390×844 and 440×956: a service-worker upgrade from intermediate build `6379aad6d342` (reporting 1.1.0) waits while a count/form is active. After closure, 1.2.0 retains the exact old journal. New recordings retain offsets including Undo, and replay after an offline reload. No browser errors; no horizontal overflow; replay controls are at least 44px tall. Screenshots inspected. These are emulations, not physical Safari checks.
 - Invariant audit: the sole accepted-click path pushes one elapsed offset and derives count from array length; Undo pops and derives the same count. Completion copies the array. Validation copies before asynchronous IndexedDB work. Backup restore and replay both use that validator; the replay snapshot is frozen. A generation token rejects stale callbacks, and frames derive the current clip/tap directly from elapsed time. Only the active point receives a ring; playback never calls `tapSound.play()` or storage writes.
 - Manual code/security/docs audit found no remaining blocking issue. No new dependencies, external destinations or credentials. The worker precaches and verifies the replay module. Rendering reuses a cached chart image instead of sorting/redrawing all history each frame. README/changelog and the baseline recovery correction match format 3 and unreleased status.
 
@@ -103,3 +103,11 @@ Physical checks remain pending on both iPhone 12 and iPhone 17 Pro Max: Safari a
 
 - The replaying row is marked by an inset bar and tint inside its existing padding (no `padding-left`), so its text never reflows. `#replay-status`/`#replay-progress` reserve one line and `#replay-detail` keeps its space, hidden with `visibility` plus `aria-hidden`/`inert` while inactive. The harness asserts the list heading's offset and the row's text box are identical before, during, after Stop and after a finished sequence; reverting the CSS fails it.
 - The counting session no longer stores `count`; every read derives it from `tapOffsetsMs.length`. `scrollIntoView` drops the `behavior` option for older Safari.
+
+### Review-gauntlet round 1 (14 November 2026)
+
+- `tapSound.stop()` now stops and disconnects every tone still playing before suspending. Previously a tone cut off by the end of a count stayed connected in the suspended context and resumed at the start of the next count. `stop()` stays idempotent (count end, cancel, untick).
+- Unticking **Quiet tap sound** calls `tapSound.stop()`, so the context started by the tick is suspended. The bumped attempt counter still makes a pending `detect()` ignore its result.
+- `newestFirst` in `replay.mjs` is the single reading order (newest first, then id by code unit). The replay queue, chart hit-test tie-break and History list all use it.
+- Tests: a table over {unticked, ticked-idle, counting, finished} × {suspended, running} × {tone, none} for `stop()`, the 10 ms-before-end case, and a harness check that unticking suspends audio when detect has finished, is pending, or follows a count. Each failed with its fix reverted.
+

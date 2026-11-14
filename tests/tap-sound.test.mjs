@@ -103,3 +103,83 @@ test('detect reports whether audio actually runs', async () => {
   assert.equal(sound.play(),false, 'detect alone never enables tones');
   const f=fixture(); assert.equal(await f.sound.detect(), true, 'already running');
 });
+
+// A fake audio graph that records whether each tone is still connected and when it is scheduled to stop.
+// Operations apply in call order, as a real AudioContext serializes resume() and suspend().
+function graph({ deferResume = false } = {}) {
+  const tones = []; const pending = []; let context, suspends = 0;
+  class Audio {
+    constructor() { context = this; this.state = 'suspended'; this.currentTime = 10; }
+    resume() {
+      const at = suspends;
+      return new Promise(resolve => {
+        const settle = () => { if (suspends === at) this.state = 'running'; resolve(); };
+        if (deferResume) pending.push(settle); else settle();
+      });
+    }
+    suspend() { suspends++; this.state = 'suspended'; return Promise.resolve(); }
+    createOscillator() {
+      const node = { frequency: {}, connected: false, stopAt: undefined,
+        connect() { this.connected = true; }, disconnect() { this.connected = false; },
+        start() {}, stop(when) { this.stopAt = when ?? context.currentTime; } };
+      tones.push(node); return node;
+    }
+    createGain() { return { gain: { setValueAtTime() {}, linearRampToValueAtTime() {} }, connect() {}, disconnect() {} }; }
+  }
+  return { sound: createTapSound(Audio), tones, pending, get context() { return context; }, get suspends() { return suspends; },
+    // A tone is audible once the context runs if it is still connected and not yet stopped.
+    sounding: () => tones.filter(node => node.connected && (node.stopAt === undefined || node.stopAt > context.currentTime)).length };
+}
+
+test('ending a count 10 ms before a tone finishes leaves nothing to resume into the next count', () => {
+  const f = graph();
+  f.sound.prepare(true); assert.equal(f.sound.play(), true);
+  f.context.currentTime += 0.04; // The count ends 10 ms before the 50 ms tone would stop.
+  f.sound.stop();
+  assert.equal(f.sounding(), 0, 'a tone stayed connected and scheduled past stop()');
+  assert.ok(f.tones.every(node => !node.connected), 'stop() left an oscillator connected');
+  f.sound.prepare(true); // Next count resumes the context; a suspended context's clock has not advanced.
+  assert.equal(f.context.state, 'running');
+  assert.equal(f.sounding(), 0, 'resuming replayed the unfinished tone before any tap');
+  assert.equal(f.sound.play(), true); assert.equal(f.sounding(), 1, 'exactly one tone per accepted tap');
+});
+
+// Contract: after stop(), from any state, no tone is connected or scheduled, play() is silent until the next
+// prepare(true), and the context is asked to suspend. stop() is idempotent.
+test('stop() leaves no tone and a suspended context across the whole state space', async () => {
+  const phases = ['unticked', 'ticked-idle', 'counting', 'finished'];
+  for (const phase of phases) for (const state of ['suspended', 'running']) for (const tone of [false, true]) {
+    if (tone && !['counting', 'finished'].includes(phase)) continue; // Only an enabled count can start a tone.
+    const cell = `${phase}/${state}/${tone ? 'tone' : 'silent'}`;
+    const f = graph();
+    if (phase === 'ticked-idle') assert.equal(await f.sound.detect(), true, cell);
+    if (phase === 'counting' || phase === 'finished') {
+      f.sound.prepare(true);
+      if (tone) { assert.equal(f.sound.play(), true, cell); f.context.currentTime += 0.01; }
+      if (phase === 'finished') f.sound.stop();
+    }
+    if (f.context) f.context.state = state; // Interruptions can suspend a context at any point.
+    const before = f.suspends;
+    assert.doesNotThrow(() => { f.sound.stop(); f.sound.stop(); }, cell);
+    assert.equal(f.sounding(), 0, `${cell}: tone survived stop()`);
+    assert.ok(f.tones.every(node => !node.connected), `${cell}: oscillator still connected`);
+    assert.equal(f.sound.play(), false, `${cell}: play() after stop()`);
+    if (f.context) {
+      assert.ok(f.suspends > before && f.context.state !== 'running', `${cell}: context not suspended`);
+      f.sound.prepare(true);
+      assert.equal(f.sounding(), 0, `${cell}: resume replayed a tone`);
+      assert.equal(f.sound.play(), true, cell); assert.equal(f.sounding(), 1, cell);
+    }
+  }
+});
+
+test('stop() during a pending detect() or tone onended keeps state consistent', async () => {
+  const f = graph({ deferResume: true });
+  const detected = f.sound.detect();
+  f.sound.stop(); f.pending.forEach(settle => settle());
+  assert.equal(await detected, false, 'a resume superseded by stop() must not report running');
+  assert.notEqual(f.context.state, 'running'); assert.equal(f.sound.play(), false);
+  const g = graph(); g.sound.prepare(true); g.sound.play();
+  const [node] = g.tones; node.onended(); g.sound.stop(); node.onended?.();
+  assert.equal(g.sounding(), 0); assert.doesNotThrow(() => g.sound.stop());
+});

@@ -1,5 +1,10 @@
 import { validateReading } from './data.mjs';
 
+// The one reading order: newest first, then id by UTF-16 code unit (not locale), so ties never depend on the device.
+export function newestFirst(a, b) {
+  return b.date.localeCompare(a.date) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+
 // Immutable copies: callers, storage refreshes and frame consumers cannot change a running queue.
 export function replayableReadings(entries) {
   const queue = [];
@@ -11,7 +16,7 @@ export function replayableReadings(entries) {
       queue.push(Object.freeze(reading));
     } catch { /* An unavailable trace must not prevent other readings from replaying. */ }
   }
-  return queue.sort((a, b) => b.date.localeCompare(a.date) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return queue.sort(newestFirst);
 }
 
 function tapsAt(offsets, elapsed) {

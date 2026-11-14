@@ -3,7 +3,7 @@ import { openDatabase, readAll, saveDog, saveReading, deleteReading, restoreBack
   CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId } from './data.mjs';
 import { createUpdateMonitor } from './updates.mjs';
 import { createTapSound } from './tap-sound.mjs';
-import { createReplayController, replayableReadings } from './replay.mjs';
+import { createReplayController, newestFirst, replayableReadings } from './replay.mjs';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -143,8 +143,7 @@ $('#history-chart').onclick = event => {
   const x = event.clientX - rect.left, y = event.clientY - rect.top;
   const point = chartPoints.map(point => ({ ...point, distance: Math.hypot(point.x - x, point.y - y) }))
     .filter(point => point.distance <= 14)
-    .sort((a, b) => a.distance - b.distance || b.entry.date.localeCompare(a.entry.date) ||
-      (a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0))[0];
+    .sort((a, b) => a.distance - b.distance || newestFirst(a.entry, b.entry))[0];
   if (point) startReplay([point.entry]);
 };
 reducedMotion.addEventListener('change', () => { if (replayState) drawReplayPoint(); });
@@ -184,7 +183,7 @@ function readingDetails(reading) {
   return `${source} · ${context}${entry.uncertain ? ' · Uncertain' : ''}`;
 }
 function readings() {
-  return snapshot.readings.filter(item => item.dogId === selectedId).sort((a, b) => b.date.localeCompare(a.date));
+  return snapshot.readings.filter(item => item.dogId === selectedId).sort(newestFirst);
 }
 
 function confirmAction(title, message, label = 'Continue') {
@@ -563,6 +562,9 @@ $('#tap-sound').onchange = async () => {
   const attempt = ++soundCheck;
   const status = $('#counter-status');
   if (!box.checked) {
+    // Unticking is the opt-out: silence and suspend audio started by the tick. The bumped attempt makes a pending
+    // detect() ignore its result. Counting never reads audio state, and the box is locked while a count runs.
+    tapSound.stop();
     if (!session && !pending && [soundOnStatus, soundUnavailableStatus].includes(status.textContent)) {
       status.textContent = dog() ? 'Start the timer, then tap for each breath.' : 'Add your dog to begin.';
     }
