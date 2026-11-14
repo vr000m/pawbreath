@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { validateDog, validateReading, validateBackup, makeBackup, readBackupFile, toCsv, respiratoryRate } from '../dist/data.mjs';
+import { validateDog, validateReading, validateBackup, makeBackup, readBackupFile, toCsv, respiratoryRate, manualDate,
+  CONTEXTS, CONTEXT_LABELS, withReadingDefaults } from '../dist/data.mjs';
 
 const dog = { id: 'dog-1', name: 'Milo', threshold: null, photo: '' };
-const reading = { id: 'reading-1', dogId: dog.id, date: '2026-11-12T21:00:00.000Z', count: 12, seconds: 30, rate: 24, notes: '' };
-const backup = () => ({ format: 'pawbreath', version: 1, dogs: [{ ...dog }], readings: [{ ...reading }] });
+const reading = { id: 'reading-1', dogId: dog.id, date: '2026-11-12T21:00:00.000Z', count: 12, seconds: 30, rate: 24, notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
+const backup = () => ({ format: 'pawbreath', version: 2, dogs: [{ ...dog }], readings: [{ ...reading }] });
 
 test('rate calculation retains raw count and handles both supported durations', () => {
   assert.equal(respiratoryRate(12, 30), 24);
@@ -69,7 +70,7 @@ test('file reader rejects invalid JSON, invalid records and unreadable files', a
 
 test('reject incompatible, incomplete, duplicate and orphaned backups', () => {
   for (const modify of [
-    value => { value.version = 2; },
+    value => { value.version = 3; },
     value => { delete value.dogs; },
     value => { value.dogs.push({ ...dog }); },
     value => { value.readings.push({ ...reading }); },
@@ -124,4 +125,78 @@ test('manifest icon sizes, app references and cached shell files exist', () => {
   const worker = readFileSync(new URL('sw.js', base), 'utf8');
   assert.ok(!worker.includes('skipWaiting('));
   for (const [, path] of worker.matchAll(/'(\.\/[^']*)'/g)) assert.ok(existsSync(new URL(path, base)), path);
+});
+
+
+test('version 1 backups migrate without guessing measurement context', () => {
+  const legacy = { ...reading };
+  delete legacy.source; delete legacy.context; delete legacy.uncertain;
+  const migrated = validateBackup({ format: 'pawbreath', version: 1, dogs: [dog], readings: [legacy] });
+  assert.equal(migrated.version, 2);
+  assert.deepEqual(migrated.readings[0], reading);
+});
+
+test('manual readings round-trip with context and uncertainty without invented counts', () => {
+  const manual = { ...reading, source: 'manual', count: null, seconds: null, rate: 23.5, context: 'resting', uncertain: true };
+  const restored = validateBackup(JSON.parse(JSON.stringify(makeBackup({ dogs: [dog], readings: [reading, { ...manual, id: 'manual-1' }] }))));
+  assert.deepEqual(restored.readings[1], { ...manual, id: 'manual-1' });
+  const csv = toCsv({ dogs: [dog], readings: [manual] });
+  assert.ok(csv.includes('"23.5","",""'));
+  assert.ok(csv.includes('"manual","resting","Yes"'));
+  assert.equal(validateReading({ ...manual, rate: 300 }).rate, 300);
+  const legacy = { id: 'legacy-1', dogId: dog.id, date: reading.date, count: 12, seconds: 30, rate: 24, notes: '' };
+  const lenient = toCsv({ dogs: [dog], readings: [reading, { ...manual, id: 'bad-1', rate: 2400 }, legacy] }).split('\r\n');
+  assert.equal(lenient.length, 4, 'one invalid record must not abort or drop other rows');
+  assert.ok(lenient.some(row => row.includes('"2400"')));
+  assert.ok(lenient.some(row => row.includes('"timed","not-recorded","No"')));
+  for (const patch of [{ rate: 301 }, { rate: 2400 }, { count: 12 }, { seconds: 30 }, { rate: 0 }, { rate: Infinity }, { rate: 23.55 },
+    { source: 'imported' }, { context: 'sleepy' }, { context: null }, { uncertain: 'yes' }]) {
+    assert.throws(() => validateReading({ ...manual, ...patch }));
+  }
+  for (const context of ['asleep', 'resting', 'restless', 'not-recorded']) {
+    assert.equal(validateReading({ ...reading, context, uncertain: true }).context, context);
+  }
+});
+
+test('manual dates preserve the original local time and reject future or nonexistent dates', () => {
+  const value = '2020-01-15T13:45';
+  assert.equal(manualDate(value), new Date(2020, 0, 15, 13, 45).toISOString());
+  for (const invalid of ['', 'tomorrow', '2020-02-30T13:45', '2020-13-15T13:45', '2020-01-15T25:45']) {
+    assert.throws(() => manualDate(invalid));
+  }
+  assert.throws(() => manualDate(value, new Date(2019, 0, 1).getTime()), /future/);
+  // Typing "20" into a datetime-local year field yields year 0020, which must not be saved.
+  assert.throws(() => manualDate('0020-01-15T13:45'), /1970/);
+});
+
+test('CSV export sorts and keeps records whose stored date is missing or not a string', () => {
+  const undated = { ...reading, id: 'undated' };
+  delete undated.date;
+  const numeric = { ...reading, id: 'numeric', date: 1700000000000 };
+  const rows = toCsv({ dogs: [dog], readings: [reading, undated, numeric] }).split('\r\n');
+  assert.equal(rows.length, 4, 'every stored reading must be exported');
+  assert.ok(rows.some(row => row.includes('"1700000000000"')));
+  assert.ok(rows.some(row => row.startsWith('"Milo",""')));
+});
+
+test('measurement contexts have one definition used by every form, filter and label', () => {
+  for (const value of CONTEXTS) {
+    for (const field of ['label', 'filter', 'short']) {
+      assert.equal(typeof CONTEXT_LABELS[value]?.[field], 'string', `${value}.${field}`);
+      assert.ok(CONTEXT_LABELS[value][field].length > 0);
+    }
+  }
+  assert.deepEqual(CONTEXTS, Object.keys(CONTEXT_LABELS));
+  const html = readFileSync(new URL('../dist/index.html', import.meta.url), 'utf8');
+  for (const id of ['reading-context', 'manual-context', 'history-context']) assert.ok(html.includes(`<select id="${id}"`), id);
+  for (const value of CONTEXTS) assert.ok(!html.includes(`value="${value}"`), `index.html hardcodes context ${value}`);
+});
+
+test('legacy reading defaults fill only absent fields and leave present values for validation', () => {
+  const legacy = { id: 'legacy', dogId: dog.id, date: reading.date, count: 12, seconds: 30, rate: 24, notes: '' };
+  assert.deepEqual(withReadingDefaults(legacy), { ...legacy, source: 'timed', context: 'not-recorded', uncertain: false });
+  const manual = { ...legacy, source: 'manual', context: 'asleep', uncertain: true };
+  assert.deepEqual(withReadingDefaults(manual), manual);
+  assert.equal(withReadingDefaults({ ...legacy, context: null }).context, null);
+  assert.equal(validateReading(legacy).context, 'not-recorded');
 });

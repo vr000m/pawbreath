@@ -1049,3 +1049,21 @@ dialog label {
     scroll-behavior:auto!important;
   }
 }
+
+/* Reading context and manual entry use the same accessible form controls. */
+#reading-context, #manual-context { width:100%; margin-bottom:12px; }
+.checkbox-label { display:flex; align-items:center; gap:10px; margin:12px 0 18px; min-height:44px; text-align:left; }
+.checkbox-label input { width:20px; height:20px; flex:0 0 20px; }
+#manual-fields { border:0; padding:0; margin:0; min-width:0; }
+#manual-fields>input, #manual-fields>textarea { margin-bottom:16px; }
+#manual-timezone { overflow-wrap:anywhere; }
+#manual-entry { display:block; margin:0 auto; }
+.update-notice { padding:16px; border:1px solid currentColor; border-radius:12px; margin-bottom:24px; }
+#app-version, #published-version { overflow-wrap:anywhere; }
+.breathing-guide { border:1px solid #dce3d6; border-radius:16px; padding:18px; background:#fffefa; }
+.breathing-guide summary { cursor:pointer; font-weight:600; min-height:44px; display:list-item; align-content:center; }
+.breathing-guide p { font-size:14px; line-height:1.6; margin:14px 0 0; }
+.breathing-guide a { color:inherit; text-decoration:underline; text-underline-offset:3px; }
+.history-context-filter { margin:16px 0; }
+.history-context-filter select { width:100%; max-width:380px; }
+.history-context-filter p { max-width:65ch; }

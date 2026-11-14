@@ -27,6 +27,7 @@
 
   <main>
     <div id="error" class="error" role="alert" hidden></div>
+    <p id="update-notice" class="update-notice" role="status" hidden></p>
     <section id="measure-page" class="page">
       <div class="page-heading"><div><p class="eyebrow">A LITTLE CARE, EVERY DAY</p><h1>A quiet moment<br>for their heart.</h1><p class="subtitle">Keep a simple record of your dog's resting breaths.</p></div>
         <div class="dog-picker"><label for="selected-dog">Your companion</label><select id="selected-dog" disabled><option>Add your first dog</option></select><button class="text-button" id="add-dog">+ Add a dog</button></div>
@@ -36,6 +37,7 @@
         <section class="counter-card" aria-labelledby="counter-heading">
           <div class="card-top"><h2 id="counter-heading">Resting breath count</h2><div class="segments" role="group" aria-label="Measurement duration"><button data-duration="30" aria-pressed="true">30 sec</button><button data-duration="60" aria-pressed="false">60 sec</button></div></div>
           <p id="counter-instruction">Wait until your dog is settled or asleep.</p>
+          <p class="small muted">For sleeping readings, wait for settled sleep without active dreaming or panting.</p>
           <button id="breath-button" class="breath-circle" disabled aria-label="Count one breath">
             <span id="counter-number">Ready</span><span id="counter-label">one tap per breath</span>
             <span class="breath-wave" aria-hidden="true">⌁</span>
@@ -44,8 +46,10 @@
           <progress id="timer-progress" value="0" max="30" aria-label="Measurement progress"></progress>
           <div id="counter-controls" class="counter-controls"><button id="start" class="primary" disabled>Start counting <span aria-hidden="true">→</span></button><button id="undo" class="secondary" hidden>Undo last tap</button><button id="cancel" class="text-button" hidden>Cancel</button></div>
           <p id="counter-status" role="status" class="muted">Add your dog to begin.</p>
+          <button id="manual-entry" class="text-button" disabled>Enter a previous reading</button>
           <div id="result" class="result" hidden>
             <p id="result-rate" class="result-rate"></p><p id="result-threshold"></p>
+            <label for="reading-context">How was your dog?</label><select id="reading-context"></select><label class="checkbox-label" for="reading-uncertain"><input id="reading-uncertain" type="checkbox">I’m uncertain about this reading</label>
             <label for="reading-notes">Anything to note? <span class="muted">Optional</span></label>
             <textarea id="reading-notes" maxlength="2000" rows="3" placeholder="Asleep on the sofa, after medication…"></textarea>
             <div class="actions"><button id="save-reading" class="primary">Save reading</button><button id="discard" class="secondary">Discard</button></div>
@@ -56,13 +60,21 @@
           <section class="companion-card"><div id="dog-avatar" class="avatar" aria-hidden="true">♡</div><p class="eyebrow">YOUR COMPANION</p><h2 id="dog-name">Every breath matters.</h2><p id="dog-caption">Add a profile to start their journal.</p><button id="edit-dog" class="text-button" hidden>Edit profile <span aria-hidden="true">↗</span></button></section>
           <section class="last-card"><div class="card-top"><h2>Latest reading</h2><button class="text-button" data-page="history">View all ↗</button></div><div id="latest-reading"><p class="empty-copy">Your first reading will appear here.</p></div></section>
           <div class="count-tip"><span class="tip-icon" aria-hidden="true">i</span><p>Count one rise and fall of the chest as one breath. Keep watching your dog while you tap.</p></div>
+          <details class="breathing-guide">
+            <summary>Understanding a breathing reading</summary>
+            <p>Many healthy adult dogs breathe fewer than 30 times per minute during sleep. A sleeping rate below 20 can also be normal. Calm-awake readings can be higher, so compare readings taken in the same state.</p>
+            <p>Ceva’s Cardalis guidance advises contacting your vet if the sleeping rate is above 30 breaths/min or rising over time. This is a reason to seek advice, not a diagnosis. Follow the monitoring instructions your vet gives for your dog.</p>
+            <p><strong>If your dog is struggling to breathe, seek urgent veterinary care. Do not wait to finish a count.</strong></p>
+            <p>The reference above does not set your dog’s threshold. Pawbreath uses only the threshold you enter and does not adjust it for breed, size, sex or neuter status.</p>
+            <p class="small muted">Sources: <a href="https://dogheartdisease.com/monitoring/" target="_blank" rel="noopener noreferrer">Ceva / Cardalis monitoring guidance</a>, <a href="https://pubmed.ncbi.nlm.nih.gov/22240295/" target="_blank" rel="noopener noreferrer">healthy-dog sleeping-rate study</a>, and <a href="https://vcahospitals.com/know-your-pet/home-breathing-rate-evaluation" target="_blank" rel="noopener noreferrer">VCA home breathing guidance</a>. Reviewed 13 November 2026. Source links need an internet connection; this guidance is available offline.</p>
+          </details>
         </aside>
       </div>
     </section>
 
     <section id="history-page" class="page" hidden>
-      <div class="page-heading"><div><p class="eyebrow">THE BIGGER PICTURE</p><h1>A little history.<br>A clearer view.</h1><p class="subtitle" id="history-dog"></p></div><button id="csv-export" class="secondary">Export CSV ↗</button></div>
-      <section class="chart-card"><div class="card-top"><h2>Breaths per minute</h2><div class="segments" role="group" aria-label="History period"><button data-range="7" aria-pressed="false">Week</button><button data-range="30" aria-pressed="true">Month</button><button data-range="all" aria-pressed="false">All</button></div></div><p id="chart-summary" class="muted"></p><canvas id="history-chart" role="img" aria-label="Breathing rate over time. Exact readings are listed below."></canvas><p id="chart-empty" class="empty-copy">Save a reading to begin your history.</p></section>
+      <div class="page-heading"><div><p class="eyebrow">THE BIGGER PICTURE</p><h1>A little history.<br>A clearer view.</h1><p class="subtitle" id="history-dog"></p></div><div class="actions"><button id="history-manual-entry" class="secondary" disabled>Enter a reading</button><button id="csv-export" class="secondary">Export CSV ↗</button></div></div>
+      <section class="chart-card"><div class="card-top"><h2>Breaths per minute</h2><div class="segments" role="group" aria-label="History period"><button data-range="7" aria-pressed="false">Week</button><button data-range="30" aria-pressed="true">Month</button><button data-range="all" aria-pressed="false">All</button></div></div><div class="history-context-filter"><label for="history-context">Compare readings taken in the same state</label><select id="history-context" aria-describedby="history-context-help"><option value="all">All contexts</option></select><p id="history-context-help" class="small muted">Filters apply to the chart and list. Uncertain readings remain labelled. CSV exports include all readings for all dogs.</p></div><p id="chart-summary" class="muted"></p><canvas id="history-chart" role="img" aria-label="Breathing rate over time for the selected readings. Exact readings are listed below."></canvas><p id="chart-empty" class="empty-copy">Save a reading to begin your history.</p></section>
       <div class="section-heading"><h2>Recorded moments</h2><span id="reading-total" class="muted"></span></div><div id="reading-list"></div>
     </section>
 
@@ -72,13 +84,27 @@
         <section class="settings-card"><h2>Your dogs</h2><div id="dog-list"></div><button id="settings-add-dog" class="secondary">+ Add a dog</button></section>
         <section class="settings-card"><h2>Keep a copy</h2><p>Readings stay in this browser on this device. Download a backup regularly, especially before changing devices or clearing browser data.</p><div class="actions"><button id="backup" class="primary">Download backup</button><button id="restore" class="secondary">Restore backup</button><input id="restore-file" type="file" accept="application/json,.json" hidden></div><p class="small muted">Restore adds missing dogs and readings. Existing records with the same ID are kept. Backups include every dog and their photos.</p><p id="backup-status" role="status" class="small"></p></section>
         <section class="settings-card"><h2>On your home screen</h2><p><strong>iPhone or iPad</strong><br>Open this app in Safari, tap Share, then Add to Home Screen.</p><p><strong>Android</strong><br>Open the browser menu and choose Install app or Add to Home screen.</p><button id="install" class="primary" hidden>Install Pawbreath</button><p class="small muted" id="cache-status">Checking offline availability…</p></section>
-        <section class="settings-card quiet-card"><h2>A journal for your vet</h2><p>Each reading keeps the time, breath count, measurement length, and your notes. Export a CSV to share your observations.</p><p>Set a threshold in your dog's profile using the value your vet recommends.</p><p class="small muted">Pawbreath · Version 1.0<br>Device storage and downloadable backups.</p></section>
+        <section class="settings-card"><h2>App version and updates</h2><p id="app-version" class="small">Reading app version…</p><p id="published-version" class="small muted"></p><p id="update-status" role="status"></p><button id="check-updates" class="secondary" type="button">Check for updates</button><p id="last-update-check" class="small muted"></p><p class="small muted">Updates wait until all Pawbreath windows close. Finish and save your reading before closing.</p></section>
+        <section class="settings-card quiet-card"><h2>A journal for your vet</h2><p>Each reading keeps the measurement time, context, source, and your notes. Timed readings also retain the breath count and measurement length. Export a CSV to share your observations.</p><p>Set a threshold in your dog's profile using the value your vet recommends.</p><p class="small muted">Device storage and downloadable backups.</p></section>
       </div>
     </section>
     <footer>Made for the ones who make your day.</footer>
   </main>
 
-  <dialog id="dog-dialog"><form id="dog-form"><div class="card-top"><h2 id="dog-dialog-title">Add your dog</h2><button type="button" id="close-dog" class="close-button" aria-label="Close dog profile">×</button></div><label for="dog-input">Name</label><input id="dog-input" required maxlength="60" autocomplete="off" placeholder="Your dog's name"><label for="threshold-input">Vet-recommended threshold <span class="muted">Optional</span></label><div class="input-unit"><input id="threshold-input" type="number" min="1" max="300" step="1" placeholder="Leave blank if unset"><span>breaths/min</span></div><label for="photo-input">Photo <span class="muted">Optional</span></label><input id="photo-input" type="file" accept="image/*"><div class="photo-row"><img id="photo-preview" alt="Profile photo preview" hidden><button id="remove-photo" type="button" class="text-button" hidden>Remove photo</button></div><p id="dog-error" role="alert" class="form-error"></p><button class="primary" type="submit" id="save-dog">Save profile</button></form></dialog>
+  <dialog id="dog-dialog"><form id="dog-form"><div class="card-top"><h2 id="dog-dialog-title">Add your dog</h2><button type="button" id="close-dog" class="close-button" aria-label="Close dog profile">×</button></div><label for="dog-input">Name</label><input id="dog-input" required maxlength="60" autocomplete="off" placeholder="Your dog's name"><label for="threshold-input">Vet-recommended threshold <span class="muted">Optional</span></label><div class="input-unit"><input id="threshold-input" aria-describedby="threshold-help" type="number" min="1" max="300" step="1" placeholder="Leave blank if unset"><span>breaths/min</span></div><p id="threshold-help" class="small muted">Enter the threshold your vet recommends for this dog. Leave blank if none was given; the general 30 breaths/min reference is not applied automatically.</p><label for="photo-input">Photo <span class="muted">Optional</span></label><input id="photo-input" type="file" accept="image/*"><div class="photo-row"><img id="photo-preview" alt="Profile photo preview" hidden><button id="remove-photo" type="button" class="text-button" hidden>Remove photo</button></div><p id="dog-error" role="alert" class="form-error"></p><button class="primary" type="submit" id="save-dog">Save profile</button></form></dialog>
+  <dialog id="manual-dialog"><form id="manual-form">
+    <div class="card-top"><h2>Enter a previous reading</h2><button id="close-manual" type="button" class="close-button" aria-label="Close manual entry">×</button></div>
+    <p id="manual-dog" class="muted"></p>
+    <p class="small">Use a rate you recorded outside Pawbreath. This will be labelled as a manual entry.</p>
+    <fieldset id="manual-fields">
+      <label for="manual-rate">Breaths per minute</label><input id="manual-rate" type="number" inputmode="decimal" min="0.1" max="300" step="0.1" required>
+      <label for="manual-date">Original measurement date and time</label><input id="manual-date" type="datetime-local" step="60" required aria-describedby="manual-timezone"><p id="manual-timezone" class="small muted"></p>
+      <label for="manual-context">How was your dog?</label><select id="manual-context"></select><label class="checkbox-label" for="manual-uncertain"><input id="manual-uncertain" type="checkbox">I’m uncertain about this reading</label>
+      <label for="manual-notes">Anything to note? <span class="muted">Optional</span></label><textarea id="manual-notes" maxlength="2000" rows="3"></textarea>
+    </fieldset>
+    <p id="manual-error" role="alert" class="form-error"></p>
+    <div class="actions"><button id="save-manual" type="submit" class="primary">Save reading</button><button id="cancel-manual" type="button" class="secondary">Cancel</button></div>
+  </form></dialog>
   <dialog id="confirm-dialog"><h2 id="confirm-title">Confirm</h2><p id="confirm-message"></p><div class="actions"><button id="confirm-no" class="secondary">Cancel</button><button id="confirm-yes" class="primary">Continue</button></div></dialog>
   <div id="toast" class="toast" role="status" hidden></div>
   <noscript><p class="error">Enable JavaScript to use the breathing counter and journal.</p></noscript>

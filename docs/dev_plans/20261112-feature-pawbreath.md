@@ -1,141 +1,70 @@
 # Pawbreath home-screen app
 
-**Status** Blocked — implementation complete, browser verification and publication pending
-**Component** Pawbreath
-**Assignee** Codex
-**Priority** Normal
-**Branch** main (working files only)
-**Date** 2026-11-12
-**Objective** Provide a usable offline dog breathing journal on a phone.
+**Status:** In review — 1.1.0 implemented and desktop-verified; iPhone acceptance and publication pending
+**Component:** Pawbreath
+**Branch:** feature/manual-readings-pwa-updates
+**Date:** 2026-11-12
+**Updated:** 2026-11-13
+**Objective:** Provide an offline dog breathing journal on a phone.
 
-## Context
-The user chose a home-screen web app after discussing replacing Cardalis. Tinkerbox stores standalone web utilities under www. README.md describes this layout. www/queuing_system uses plain HTML/JS/CSS and dependency-free Node assertions. There is no shared frontend framework or root package manifest.
+## Scope and architecture
 
-## Requirements
-- Original responsive interface, working name Pawbreath.
-- Dog profiles with optional photo and owner-entered threshold, initially blank.
-- Explicit Start button for 30/60-second measurement, one tap per breath, undo, cancel, completion review, notes, and explicit Save. Zero breaths cannot be saved. Interrupted or backgrounded sessions are cancelled to avoid incomplete counts.
-- Timestamp, raw count, elapsed seconds, derived rate and dog ID retained for each reading.
-- IndexedDB transactional storage. Report save failures without clearing the result. Multiple tabs must not overwrite a whole stale snapshot.
-- History, week/month/all filters, readable chart and exact readings. Confirm deletion.
-- Versioned JSON backup and additive transactional restore with validation and idempotent IDs. Existing records win on duplicate IDs. CSV export with formula-safe user text.
-- Offline app shell after initial online load, manifest and PNG icons. Changes activate only on a later launch, avoiding reload during measurement.
-- Data is device/browser local, with clear backup guidance. Export/import supports moving devices. No cloud sync in this version.
+A static HTML/CSS/JavaScript app with device-local IndexedDB storage. No third-party runtime dependencies, accounts or cloud journal storage. Cloudflare Workers serves the app publicly; each browser/hostname has a separate journal. Operational commands are in the [README](../../README.md); user-visible changes are in the [changelog](../../CHANGELOG.md).
 
-## Implementation Checklist
-### Phase 1 — Core experience
-- Build static HTML, CSS, app controller and small data module.
-- Implement counter, dog editing, history, notes, threshold and exports.
-### Phase 2 — Home-screen support
-- Add scoped service worker, manifest, PNG icons and installation instructions.
-### Phase 3 — Verification
-- Exercise counts, interrupted timers, persistence, import validation/deduplication, export, responsiveness and offline reload.
-- Update usage README and record observed verification limits.
-- After verification, deploy to the newly created owner-private Site using an isolated publishing copy of this source. Verify installation on a phone separately. (Superseded by "2026-11-12 Cloudflare deployment tooling" below: hosting moved to Cloudflare Workers Static Assets.)
-
-## Technical Specifications
-All new files live under www/pawbreath. dist/index.html is the entry, dist/app.css and dist/app.js own the interface. dist/data.mjs owns validation, CSV serialization and IndexedDB transactions. dist/sw.js caches only the enumerated local app shell, dist/manifest.webmanifest and icons enable installation. tests/data.test.mjs checks validation and serialization using node:test. README.md documents operation and storage. The ignored local .openai/hosting.json holds the registered Site identity and static directory dist. (Superseded: see "2026-11-12 Cloudflare deployment tooling"; the Site identity is retained but unused.) No build or third-party runtime dependencies.
-
-IndexedDB database pawbreath, version 1, has dogs and readings stores keyed by ID. Each write uses a narrow transaction. Backups contain format pawbreath, version 1, dogs and readings. Validate length limits, finite positive numeric fields, dates, ID uniqueness, references and photo format before any write. Import is atomic and additive. Photo uploads are resized before storage. All user strings render through textContent or escaped markup.
-
-### Integration Seams
-App calls the data module for reads/writes and registers the service worker on the same origin. Service worker performs no data writes. Sites hosts static files and supplies owner-only access. (Superseded: Cloudflare Workers Static Assets now hosts the files; see "2026-11-12 Cloudflare deployment tooling". No owner-only access control is configured in this repository.) Deployment success proves hosting, while iPhone installation and private-gateway offline behavior require real-device verification.
-
-## Testing Notes
-Use node --test tests/data.test.mjs and browser tools against local HTTP. Verify both empty and populated states at mobile and desktop widths. Use a controlled clock for timers where supported. Inspect successful service worker install and offline reload. Keep test records confined to local preview.
-
-The browser harness tests failed commits, mid-import rollback, concurrent database connections, hostile markup as text, and deadline taps. Node tests cover malicious CSV values, malformed backups and worker fetch/cache behavior. A live served browser still needs a two-version worker update during a measurement and an offline reload.
-
-## Architecture & Call Flow
-The page reads and writes IndexedDB. A separate service worker caches the app shell after initial network access. It never writes journal records. Newly installed workers wait for all existing windows to close before activating, and activation cleans only obsolete Pawbreath shell caches.
+| Files | Responsibility |
+| --- | --- |
+| `dist/index.html`, `app.css`, `app.js` | Profiles/photos, counter, manual-entry forms, guidance, History and Settings |
+| `dist/data.mjs` | Validation, transactional storage, CSV and JSON backup/restore, `CONTEXT_LABELS`, `withReadingDefaults` and `manualDialogAction` |
+| `dist/updates.mjs`, `sw.js` | Update status and scoped offline shell; no journal writes |
+| `scripts/release.mjs`, `scripts/lib/precache-assets.mjs`, `dist/version.mjs`, `dist/release.json` | Deterministic app release/build identity; published metadata is network-only |
+| `dist/manifest.webmanifest`, icons | Home-screen installation |
+| `wrangler.jsonc`, `dist/_headers`, `scripts/cloudflare.sh`, `justfile` | Hosting, security headers, external credentials and deployment checks |
+| `tests/` | Data/worker/update/deployment tests, `manual-dialog.test.mjs`, `structure.test.mjs` and browser harness |
 
 ```mermaid
-flowchart TD
-  P[App page] --> D[IndexedDB journal]
-  P --> W[Service worker]
-  W --> C[App shell cache]
-  W --> N[Static host]
+flowchart LR
+  UI[App page] --> DB[(IndexedDB journal)]
+  UI --> SW[Service worker]
+  SW --> C[Offline shell cache]
+  SW --> H[Static host]
 ```
 
-```mermaid
-sequenceDiagram
-  participant P as App page
-  participant D as IndexedDB
-  participant W as Worker
-  participant C as Shell cache
-  P->>D: Load profiles and readings
-  P->>W: Register worker
-  W->>C: Install verified shell assets
-  P->>D: Save completed measurement
-  D-->>P: Transaction committed
-  Note over W,C: Updates wait for old app windows to close
-```
+## Decisions and invariants
 
-| Step | Trigger | Enters context | Cleared/persisted | Turn boundary |
-| --- | --- | --- | --- | --- |
-| Startup | Open app | Profiles and readings | Database retained | Page lifecycle |
-| Measurement | Start and tap | Count and deadline | Unsaved result in memory | Timer callbacks |
-| Save | Save reading | Validated record | Transaction commit | Database callback |
-| Shell install | Register worker | Enumerated asset responses | Cache retained | Worker lifecycle |
-| Update | All old clients close | New shell version | Old app caches removed | Worker activation |
+- **Measurement:** explicit Start, 30/60-second timer, one tap per breath and undo. Deadline taps do not count; zero-breath and interrupted/backgrounded counts cannot be saved. Timed records retain date, count, duration and derived rate. Manual records retain the original local date/time and a positive rate up to 300 with one decimal place, with null count/duration. Reject future/nonexistent local times and years before 1970.
+- **Context and guidance:** record asleep/resting/restless/not-recorded and optional uncertainty. Never infer legacy context from notes. General guidance never fills the optional vet threshold or labels a result safe/normal. No breed, weight, sex or neuter adjustment is applied. Guidance is cached; linked sources require internet access.
+- **History:** chart and list share date/context filters; uncertain readings stay labelled. Timed/manual saves clear incompatible filters. CSV and JSON exports retain all dogs/readings.
+- **Persistence:** IndexedDB `pawbreath`, schema 1, with `dogs` and `readings` stores keyed by ID. Confirm saves only after transaction commit; retain failed results/drafts and stable IDs for retry. Concurrent tabs must preserve distinct writes. Dirty manual dialogs require Save/Discard and retain drafts after repeated Escape. Profile photos are resized; user text renders literally. Reading deletion requires confirmation.
+- **Recovery:** backup format 2 accepts format 1 imports, normalizing old records without guessing context. Old apps reject format 2. Validate a complete backup before one atomic, additive restore; existing IDs win. Export and import accept the same valid snapshot domain without aggregate count/byte caps, subject to browser resources. CSV neutralizes formula prefixes and offers best-effort rows for invalid stored records.
+- **Updates:** package version plus generated build hash identifies the running app, published metadata and shell cache. Hash deployed source recursively, excluding dotfiles/generated identity. Check metadata in tests; at install the worker rejects a `version.mjs` carrying a different build and verifies every precached shell file's SHA-256 against the generated `DIGESTS` manifest in `sw.js`; any mismatch aborts installation and caches nothing, so the host must serve shell files byte-for-byte. Cache the scope root, not redirected `index.html`. No `skipWaiting` or forced reload: activate after all clients close, remove only obsolete Pawbreath caches, never touch journal storage. Save before intentionally closing; drafts are not durable across shutdown.
+- **Update status:** check on launch, reconnect and resume (resume throttled to one minute), using uncached published metadata and `updateViaCache: none`. Offline/failed checks never claim freshness; optional last-check storage failures cannot block the app.
+- **Deployment:** require clean tracked `dist/` and successful JSON authentication before publishing. Credentials remain external; the app needs none. Same-origin CSP allows data/blob profile images, blocks framing and MIME sniffing. Wrangler owns the apex association; dashboard-managed HTTP/`www` redirects remain separate.
 
-## Review Focus
-Timer boundaries, interrupted counting, truthful persistence feedback, atomic restore, duplicate imports, offline shell updates, output escaping and data portability.
+## Decision history
 
-## Acceptance Criteria
-- A user can add a dog, record a timed reading, save it and recover it after reload.
-- History renders actual records with date filtering and notes.
-- Backup restores to an empty store and repeated imports create no duplicates.
-- Invalid backups leave existing data untouched.
-- Shell loads offline after caching, with no externally hosted runtime assets.
-- Phone layout fits 375px width with accessible controls.
-- Private hosted URL is returned if publication succeeds, and remaining device verification is disclosed.
+- **2026-11-12:** Moved from `tinkerbox/www/pawbreath` into a standalone repository. Cloudflare Workers replaced the proposed owner-private Sites host; the unused Sites identity stays ignored locally. The public static host adds no shared data access.
+- **2026-11-12:** Removed backup aggregate limits after additive restores produced valid journals that could not round-trip. Workers' `index.html` redirect required caching only the scope root. The earlier three-round gauntlet remained non-converged; subsequent manual code/security/docs checks closed its remaining security-header finding before the baseline merge/deploy. Do not relabel that historical gauntlet as converged.
+- **2026-11-13:** Added manual/context records and backup format 2 without changing IndexedDB schema. Replaced fixed cache versions with generated release/build identity. Review fixes cover dirty-dialog retention, date/rate bounds, CSV recovery and worker build matching. Added informational guidance and comparable History without automatic clinical thresholds.
+- **2026-11-13:** Consolidated this plan to retain decisions and final evidence. Superseded permission failures, interim test counts and handoff logs remain in Git history: `git show c28de322c645577736b5c040b1c950d0ff8a3838:docs/dev_plans/20261112-feature-pawbreath.md`.
 
-<!-- review pending -->
+## Verification and acceptance
 
-## Progress
-- Site registered and manifest persisted.
-- Implemented app UI, dog profiles and photos, counter, history chart, threshold, notes, JSON restore and CSV export.
-- Added scoped offline worker, home-screen manifest and raster icons.
-- All 11 Node tests pass. App, data module, worker, and generated browser harness pass syntax checks.
-- Created a reproducible browser harness with isolated test databases. Browser execution remains blocked.
+Verified 13 November 2026 for release 1.1.0, build `7846c276f416`:
 
-## Findings
-Five review findings recorded. Added lifecycle diagrams and moved publication after verification. Added failure-injection, concurrent-write, hostile-text, and timer checks to the browser harness. Added CSV injection tests. Real worker-update testing remains pending because browser/server access is blocked.
+- [x] `npm test`: 58 Node tests, release metadata and syntax checks pass; `just deploy-check` completes the Wrangler dry run.
+- [x] Browser harness: 17 checks (all pass in headless Chromium) cover real IndexedDB writes, failures/rollback, concurrent connections, repeated restore, hostile text, timer boundaries, manual entry, threshold independence, context filters and save visibility. Its worker registration is simulated.
+- [x] Recorded 375px layout checks show no horizontal overflow; manual Save/Cancel controls remain reachable.
+- [x] Separate real localhost Chromium upgrade from `b54a8e48353a` to `a3f2bc133df7`: the worker waited through an active count, pending result notes, dirty manual form and profile edits. Closing one of two clients retained the remaining draft and kept the update waiting. After saving and closing all clients naturally, the new build reopened offline with identical journal data.
+- [x] After that upgrade, offline guidance, actual chart/list filtering, complete CSV/JSON downloads and timed/manual save visibility passed. Tested assets matched `dist/` byte for byte; no forced activation was used.
+- [ ] Physical iPhone: Safari home-screen installation and offline reopening after fully quitting.
+- [ ] Physical iPhone: update activation with Safari and the installed app both open; lock-screen/app-switch cancellation of active counts.
+- [ ] First measurement with a settled/asleep dog. User-reported checks of the deployed baseline do not verify this new release.
+- [ ] Merge and deploy 1.1.0; verify the deployed identity, HTTPS/redirects and installed app.
 
-## Issues & Solutions
-- Local HTTP listener was denied with EPERM by the execution sandbox.
-- Hosting source Git endpoint could not resolve. Site creation succeeded but no source version was published.
-- Browser tool stalled and was later removed. Computer-use browser rejected file navigation under its URL policy. No browser verification result is claimed.
-- Review metadata was moved to scratch after integrating findings to keep the repository change focused on the app.
+No deployment was performed during this feature's verification. The earlier blocked dry-run/desktop-upgrade claims are superseded by these results. [PR #2](https://github.com/vr000m/pawbreath/pull/2) contains the feature review.
 
-## Final Results
-Working source is in www/pawbreath/dist with no runtime dependencies. Default name is Pawbreath. Storage is device-local. Remaining acceptance checks are real browser interaction, mobile layout, offline updates, phone installation, and deployment once network access is available.
+## Deferred work
 
-## 2026-11-12 repository move
-The app moved from `tinkerbox/www/pawbreath` into the standalone repository <https://github.com/vr000m/pawbreath>. Paths above describe the original implementation location; current paths are relative to this repository root, with the app in `dist/`. Initial import uses `feature/initial-import`. The root `.gitignore` excludes local hosting configuration, credentials, editor state and verification output while retaining app source. Hosting identity is preserved locally in the ignored `.openai/hosting.json` file. Browser, device and deployment verification remain pending.
+Shared household access and automatic recovery need a separate design. The direction is local IndexedDB plus a durable upload queue, authenticated Worker API, D1 shared records and private R2 photos/backups. Preserve stable client IDs and server-verified authorship; use revisions, deletion markers and a server-ordered change cursor rather than device clocks alone. Migration requires explicit household mapping; retain local-only use and distinguish local saves from server acknowledgement. Independent retained backups and tested restore are required alongside sync. Authentication, retention and permissions remain undecided; no such resources are created here.
 
-## 2026-11-12 backup round-trip correction
-Review found that additive restores can exceed the backup validator's aggregate record limits, and exports can exceed the file reader's 20 MB limit. These limits invalidate the data-portability requirement above: every valid stored journal must remain exportable and readable by restore, within browser memory and storage capacity.
-
-Remove aggregate count and file-size limits while retaining format, per-record, uniqueness and reference validation. Route file parsing through a shared validated reader in `dist/data.mjs`, used by the restore handler in `dist/app.js`. Cover journals above 100 dogs and 50,000 readings, additive backup combinations, files above 20 MB and invalid file contents in Node regressions. Increment the service-worker cache version for changed shell assets and document the browser resource boundary in README.md. This corrects backup handling only; the outstanding browser/device/deployment checks remain pending.
-
-Implemented and verified: all 14 Node tests pass, including the new aggregate and file-size regressions; the 11-check browser harness also passes in Chromium. Export, file reading and transactional restore all use `validateBackup`. The service-worker shell cache is now v2. Real-device installation and a two-version worker update remain unverified.
-
-## 2026-11-12 Cloudflare deployment tooling
-Cloudflare Workers Static Assets at `pawbreath.com` supersedes the original Sites publication target. Use an assets-only Worker with `dist/` as the complete public directory and the apex as its custom domain. No server-side journal, database binding or runtime secret is needed. The existing local Sites identity is retained but is not used by this workflow.
-
-Add a pinned Wrangler development dependency and lockfile, `wrangler.jsonc`, a root `justfile`, and `scripts/cloudflare.sh` for external credential loading and an authentication check before deployment. Recipes cover installation, local preview, the full Node suite, account verification, a credential-free dry run and an explicit production deployment. Keep external secrets and generated Wrangler state out of Git. Update README with these commands and deployment prerequisites. Verify recipes, tests, a dry run, local HTTP serving and read-only account/domain access before committing; do not publish as part of tooling setup.
-
-Implementation branch: `feature/cloudflare-deploy`. The required credential names exist in `~/.secrets/cf.env`; read-only checks confirm the token is active, Wrangler authenticates, and `pawbreath.com` is active in the configured account with no existing Worker domain association. Permission metadata is not readable with this token, so deployment write permissions remain unverified.
-
-Validation: clean `just install`, all 23 Node tests and syntax checks, and `just deploy-check` pass. The local Workers runtime serves the root and the other six shell assets with HTTP 200; credential and repository configuration paths return 404. `/index.html` returns a 307 redirect to `/` (default `auto-trailing-slash` HTML handling), which the service worker's install rejects as a redirected response, so `dist/sw.js` no longer precaches `./index.html` (the scope root is the shell document) and a regression test covers it. The shell cache name is bumped to `pawbreath-shell-v3` so activation retires the v2 cache that still holds the stale `/index.html` entry. Tests cover credential precedence (exported token versus default and explicit files), missing files and authentication failure before deployment. `just deploy` also refuses, before authenticating, when `dist/` has untracked, modified or ignored files, because Wrangler uploads every file present in the directory and ignores `.gitignore`. Deployment and `just cf-whoami` use `whoami --json` because Wrangler's human-readable mode can exit successfully while unauthenticated. No production deployment or DNS mutation was performed.
-
-Review: a three-round review gauntlet ran on this branch. The Codex adversarial gate failed in rounds 1 and 2 on tool-host timeouts and approved with no findings in round 3. Each round pooled three Minor findings, all different, and fixes landed in `ac9eabe`, `b87d6ab`, `6b174fa`, `7200935`, `e242a00` and `6865c7f`. The gauntlet ended as non-converged because the finding count never fell, and the last fixes have not had a clean confirming pass. One finding is open: security response headers (`dist/_headers` with a CSP, frame-ancestors and nosniff) need a design decision and a real-browser check, so they are not implemented. The token scopes and the absence of an existing apex DNS record also remain unverified.
-
-### 2026-11-12 merge and deployment closure
-The user has deployed successfully and reports completing the phone acceptance checks. Production HTTPS and all HTTP/`www` redirects have been verified. Redirects and the proxied `www` placeholder DNS record are managed in Cloudflare's dashboard, independently of Wrangler. Successful deployment demonstrates sufficient token access for this Worker; token permission metadata remains unreadable.
-
-Close the remaining security-header finding with `dist/_headers`: same-origin scripts/styles/connections/workers, data/blob profile images, no objects or framing, and nosniff. Keep `sw.js` revalidated and bump the shell cache to v4 so updated policy responses replace earlier caches. Verify the real Workers preview under the policy, the full Node suite and the final diff before a regular merge and deployment of the merged commit. The earlier gauntlet remains a historical non-converged run; do not relabel it as converged.
-
-Pre-merge confirmation: all 23 Node tests, syntax checks and the deployment dry run pass. The Workers preview emits the CSP/nosniff/no-cache headers; Chromium can upload and save a photo, count and persist a reading, read a backup, and install the offline worker with no CSP violations or console errors. Manual code/security/documentation inspection of the final branch changes found no remaining actionable issues. This closes the header finding and confirms the final fixes without changing the historical gauntlet result.
+Vet reports, reading corrections/profile archiving, household reminders and external historical imports remain outside this release. Camera detection and medication scheduling are deferred.

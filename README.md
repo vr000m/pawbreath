@@ -1,85 +1,68 @@
 # Pawbreath
 
-A mobile-first breathing journal for dogs. The app supports timed 30/60-second tap counting, multiple dog profiles and photos, notes, date-filtered charts, owner-entered thresholds, CSV export, and versioned JSON backups.
+A mobile-first breathing journal for dogs: timed 30/60-second counts, multiple profiles and photos, manual entries, measurement context, notes, history charts and backups. Each browser keeps its own journal; there are no accounts or sync across devices.
 
 ![Pawbreath measurement screen with a sample Milo profile and latest reading](docs/images/pawbreath-preview.png)
 
-Local browser preview with sample data.
+Local preview with sample data. See the [changelog](CHANGELOG.md) for changes and the [development plan](docs/dev_plans/20261112-feature-pawbreath.md) for decisions and verification. The branch's 1.1.0 changes are not yet deployed; physical iPhone acceptance remains pending.
 
-## Run locally
+## Install and use
 
-From this directory, start a static server.
+On iPhone, open the hosted HTTPS site in Safari and choose **Share → Add to Home Screen**. On Android, use **Install app** or **Add to Home screen**. Open online once and check for **Offline ready** before relying on offline loading.
+
+Add a dog, wait until they are settled or asleep, and start a count. Tap once per breath, review the result, then save. Leaving the app cancels an active count; zero-breath counts cannot be saved. Failed saves retain the result for retry. Manual entries record a rate and original local date/time without inventing a count or duration; future dates and years before 1970 are rejected.
+
+Readings can be labelled asleep, resting, restless or context not recorded, with an optional uncertainty flag. History applies date/context filters to both chart and list. Saving an entry clears conflicting filters so it stays visible. Profiles are editable; reading deletion asks for confirmation.
+
+The cached breathing guidance explains measurement context and when to seek veterinary advice. Thresholds start blank: enter the value your vet recommends. The general 30 breaths/min reference never sets that value automatically. The app compares readings against the entered threshold without diagnosing a condition. External source links require connectivity.
+
+## Storage and backups
+
+Data stays in IndexedDB on this device/browser and hostname. Clearing browser data or losing the device can lose the journal. Download JSON backups from Settings regularly; CSV exports include all dogs and readings with UTC timestamps, regardless of History filters.
+
+Restore validates the complete backup and adds missing records in one transaction, preserving existing records with matching IDs. A previous backup can recover deleted readings. Export and restore share validation rules and have no fixed aggregate size/count limit; browser resources still limit capacity.
+
+New backups use format 2 and accept version 1 imports. Older app versions cannot import format 2. Manual records retain their source, context and uncertainty; CSV leaves their count/duration fields blank. Version 1.0 cannot export backups containing 1.1.0 manual records, so before rolling back export a backup from 1.1.0, and do not roll back while manual entries are present.
+
+## App updates
+
+Settings shows running/published versions, the last successful check and **Check for updates**. Checks also run on launch, reconnection and resumption. **Offline ready** means the app is cached, not necessarily current.
+
+When **Update ready** appears, save your work, fully close the installed app and all Pawbreath browser tabs, then reopen. Downloaded updates can activate offline and retain the journal. They never force a reload during a count or form edit. Unsaved work does not survive intentionally closing the app. Older releases gain the version panel only after completing this upgrade cycle.
+
+## Develop and verify
+
+The tracked `dist/` directory is the app source; no runtime build or package installation is needed for a basic preview:
 
 ```sh
 python3 -m http.server 8766 --bind 127.0.0.1 --directory dist
 ```
 
-Open <http://127.0.0.1:8766>. Running the app this way needs no package installation or build step; the Cloudflare tools below are only for deployment and the Workers preview. Use HTTP on localhost or HTTPS when hosted, because browser modules, service workers, and home-screen installation need the appropriate origin.
+Open <http://127.0.0.1:8766>. Use localhost HTTP or hosted HTTPS for service workers.
 
-To install on an iPhone, open the hosted HTTPS URL in Safari, choose Share, then Add to Home Screen. On Android, use the browser's Install app or Add to Home screen action. Open the app online once and check that it reports “Offline ready” before relying on offline loading.
-
-## Storage and measurement behavior
-
-- Each device/browser keeps its own IndexedDB journal. Data does not synchronize across people or devices.
-- Download JSON backups from Settings to protect readings against device loss or clearing browser data. CSV exports include all dogs and use UTC timestamps.
-- Restore validates the complete backup before beginning one transaction. It adds missing IDs and keeps existing records on conflicts. A previous backup can restore a reading deleted since that backup.
-- Backups have no fixed record-count or file-size limit. Export and restore validate the same format and record rules; available browser memory and device storage limit how large a journal can be processed.
-- Each measurement starts with an explicit Start action. Taps at or after the deadline do not count. Zero-breath sessions cannot be saved. Leaving the app during a count cancels that measurement.
-- Save confirms only after the database transaction commits. A failed save retains the completed reading for retry.
-- Thresholds start empty. Enter the value your vet recommends. The app displays a comparison at or above that value.
-- Profiles can be edited. Individual readings can be deleted after confirmation. Dog deletion and cloud accounts are outside this version's scope.
-- Service-worker updates wait until all existing app windows close. Increment `CACHE` in `dist/sw.js` whenever shipping changed shell assets.
-
-## Verify
+With Node.js 22.12+ and [just](https://github.com/casey/just):
 
 ```sh
-node --test tests/*.test.mjs
-node --check dist/app.js
-node --check dist/data.mjs
-node --check dist/sw.js
-```
-
-An optional browser harness combines the current source into a temporary HTML file and uses a separate test database. It exercises real IndexedDB writes, aborted commits, import rollback, concurrent connections, duplicate restores, hostile text, timer boundaries, and interrupted sessions.
-
-```sh
+just install        # Install locked development dependencies
+just dev            # Workers preview on port 8766; accepts another port
+npm test            # Node tests, release metadata and syntax checks
 node tests/browser-check.mjs
+just deploy-check   # Tests and Wrangler dry run; does not deploy
 ```
 
-Open the printed temporary file in a browser to run it. The title and an on-page report show its results. Test databases use `pawbreath-verification-*` names. The harness does not test service workers. For a served browser check, also verify the 375px mobile layout, offline reload, install-to-home-screen flow, and a worker update while a count is running.
+Open the browser harness's printed file to run its checks. It uses an isolated database and simulated worker registration. Actual worker upgrades require a served test; iPhone installation and lifecycle checks require the device.
 
-## Cloudflare Workers
+`package.json` owns the release version. To change it, use `npm version 1.1.1 --no-git-tag-version` with the intended version. Run `npm run release` after final app edits, then commit the changed source, package/lockfile and generated `dist/version.mjs`, `dist/release.json` and `dist/sw.js`. Tests reject stale metadata. App, backup and database versions are independent.
 
-Deploy the static app to `pawbreath.com` using [Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/). The Wrangler configuration uploads only `dist/` and attaches the apex domain. There is no app build step or server-side database. Journal data stays in the browser, and each hostname has its own journal storage. The deployed site is publicly reachable with no access control, so anyone with the URL can load the app, but they can only see journal data stored in their own browser.
+## Deploy to Cloudflare
 
-Install Node.js 22.12+ and [just](https://github.com/casey/just), then run:
+[Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/) serves `dist/` at `pawbreath.com`, with no server-side journal or runtime secrets. The site is public; visitors see only their own browser's data.
 
 ```sh
-just install        # Install the locked Wrangler development dependency
-just dev            # Local Workers preview at http://127.0.0.1:8766
-just test           # Full Node suite and syntax checks
-just cf-whoami      # Read-only account/authentication check (JSON)
-just deploy-check   # Tests and a local deployment dry run
-just deploy         # Tests, authentication check, then production deployment
+just cf-whoami      # Check authentication
+just deploy        # Tests, authentication, then production deployment
 ```
 
-Use `just dev 8767` if the default port is already occupied.
+Keep credentials outside the repo. These commands load `~/.secrets/cf.env` when no `CLOUDFLARE_API_TOKEN` is exported. Use shell assignments for that token and `CLOUDFLARE_ACCOUNT_ID`. An explicit `CLOUDFLARE_ENV_FILE=/absolute/path/to/file.env` overrides exported credentials; otherwise Wrangler can use its existing login. Preview and dry runs do not load this file.
 
-`just deploy` refuses to run unless `dist/` matches git exactly (no untracked, modified or ignored files such as backups or `.DS_Store`), because Wrangler uploads every file present in `dist/` to the public site.
-
-`just cf-whoami` and `just deploy` load `~/.secrets/cf.env` if `CLOUDFLARE_API_TOKEN` is not already exported. The file should contain shell-compatible assignments for `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. To use another file, set `CLOUDFLARE_ENV_FILE=/absolute/path/to/file.env`; relative paths (including bare names and `~` left unexpanded) are rejected. An explicit file override takes precedence over exported credentials; an unreadable override fails immediately. Without a file or exported token, Wrangler uses its existing login (`./node_modules/.bin/wrangler login`). Local preview and dry runs do not load the external credential file.
-
-Deployment is expected to need a token scoped to the target account with Workers Scripts edit access, plus Zone read and Workers Routes write access for `pawbreath.com` ([Workers permissions](https://developers.cloudflare.com/workers/authorization/workers/)). These scopes are unverified: creating the custom domain may also need DNS edit, so adjust the token if the first `just deploy` is rejected. The domain must be an active Cloudflare zone in that account, and the apex must have no existing A, AAAA or CNAME record, or custom-domain creation will fail. The deployment config creates the custom-domain association and disables `workers.dev` and preview URLs. It does not configure `www.pawbreath.com`. After deployment, verify HTTPS, offline reload and home-screen installation at the final hostname.
-
-Keep credential files outside the repository. `.env*`, `.dev.vars*`, `.openai/`, `node_modules/` and `.wrangler/` are ignored. The runtime site does not need any Cloudflare credentials.
-
-Cloudflare's dashboard separately manages the `Canonical HTTPS and apex` redirect rule and a proxied `www` A record pointing to the reserved placeholder `192.0.2.0`. The rule sends HTTP apex requests and all `www` requests to `https://pawbreath.com` with status 301, preserving paths and query strings. Keep that DNS record proxied and the redirect enabled; Wrangler does not manage these zone settings.
-
-`dist/_headers` applies a same-origin Content Security Policy, blocks framing and MIME sniffing, and keeps the service-worker script revalidated. Profile photos may use data and blob URLs. The shell cache is versioned whenever the cached assets or their security policy changes.
-
-## Current delivery state
-
-Source implementation, the Node tests and the 11-check Chromium browser harness pass. The local preview fits a 375px mobile viewport without horizontal overflow. Production HTTPS and the HTTP/`www` redirects have been verified. The user reports completing the phone installation, offline reopening, persistence, backup/restore and worker-update checks. The merge deployment will publish the latest service-worker and security-header fixes.
-
-A private Site was originally registered, with its identity saved locally in the ignored `.openai/hosting.json` file. Cloudflare Workers is now the production host; the Sites identity is retained locally but is not used by the recipes above.
-
-The app now lives in the standalone [Pawbreath repository](https://github.com/vr000m/pawbreath), moved from `tinkerbox/www/pawbreath`. Run the commands above from this repository's root. Git tracks `dist/` as app source; local hosting configuration in `.openai/`, credentials, editor state and verification output are ignored.
+Deployment requires a clean tracked `dist/`, including no ignored/untracked files: everything there can become public. Wrangler manages the apex custom domain; Cloudflare's dashboard separately manages HTTP/`www` redirects to HTTPS apex, preserving paths/queries. Keep the `www` placeholder A record (`192.0.2.0`) proxied and the redirect enabled. `dist/_headers` sets the security policy and cache controls. The host must serve shell files byte-for-byte (no HTML rewriting, minification or injection); the service worker verifies each file's SHA-256 at install, so any change makes installation fail and offline mode will not activate. After deployment, verify HTTPS, redirects, offline reopening and the installed app.

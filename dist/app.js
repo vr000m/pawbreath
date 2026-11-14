@@ -1,5 +1,7 @@
 import { openDatabase, readAll, saveDog, saveReading, deleteReading, restoreBackup,
-  readBackupFile, makeBackup, toCsv, respiratoryRate } from './data.mjs';
+  readBackupFile, makeBackup, toCsv, respiratoryRate, manualDate, manualDialogAction,
+  CONTEXTS, CONTEXT_LABELS, withReadingDefaults } from './data.mjs';
+import { createUpdateMonitor } from './updates.mjs';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -9,8 +11,12 @@ let selectedId = '';
 let page = 'measure';
 let duration = 30;
 let range = '30';
+let historyContext = 'all';
 let session = null;
 let pending = null;
+let manualDraft = null;
+let manualDirty = false;
+let manualConfirming = false;
 let timer = null;
 let saving = false;
 let editId = null;
@@ -34,7 +40,21 @@ function toast(message) {
   toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 4500);
 }
 
+// Context options come from data.mjs, the single definition. Unrecorded context is listed last in the filter.
+for (const id of ['#reading-context', '#manual-context']) {
+  for (const value of CONTEXTS) $(id).add(new Option(CONTEXT_LABELS[value].label, value));
+}
+for (const value of [...CONTEXTS.filter(item => item !== 'not-recorded'), 'not-recorded']) {
+  $('#history-context').add(new Option(CONTEXT_LABELS[value].filter, value));
+}
+
 function dog() { return snapshot.dogs.find(item => item.id === selectedId); }
+function readingDetails(reading) {
+  const entry = withReadingDefaults(reading);
+  const context = CONTEXT_LABELS[entry.context]?.short ?? CONTEXT_LABELS['not-recorded'].short;
+  const source = entry.source === 'manual' ? 'Manual entry' : `${entry.count} breaths counted over ${entry.seconds} seconds`;
+  return `${source} · ${context}${entry.uncertain ? ' · Uncertain' : ''}`;
+}
 function readings() {
   return snapshot.readings.filter(item => item.dogId === selectedId).sort((a, b) => b.date.localeCompare(a.date));
 }
@@ -83,7 +103,7 @@ function renderProfiles() {
   const current = dog();
   $('#dog-name').textContent = current?.name ?? 'Every breath matters.';
   $('#dog-caption').textContent = current
-    ? (current.threshold ? `Your threshold · ${current.threshold} breaths/min` : 'A moment of care, one reading at a time.')
+    ? (current.threshold ? `Threshold you entered · ${current.threshold} breaths/min` : 'No vet threshold entered.')
     : 'Add a profile to start their journal.';
   const avatar = $('#dog-avatar');
   avatar.replaceChildren();
@@ -129,22 +149,27 @@ function renderLatest() {
   unit.textContent = 'breaths / min';
   const date = document.createElement('p');
   date.textContent = dateFormat.format(new Date(latest.date));
-  container.append(number, unit, date);
+  const meta = document.createElement('p');
+  meta.className = 'reading-meta';
+  meta.textContent = readingDetails(latest);
+  container.append(number, unit, date, meta);
 }
 
 function filteredReadings() {
   const cutoff = range === 'all' ? 0 : Date.now() - Number(range) * 86400000;
-  return readings().filter(item => Date.parse(item.date) >= cutoff);
+  return readings().filter(item => Date.parse(item.date) >= cutoff &&
+    (historyContext === 'all' || withReadingDefaults(item).context === historyContext));
 }
 
 function renderHistory() {
-  $('#history-dog').textContent = dog() ? `${dog().name}'s resting breathing journal.` : 'Add a dog and save your first reading.';
+  $('#history-dog').textContent = dog() ? `${dog().name}'s breathing journal.` : 'Add a dog and save your first reading.';
   const entries = filteredReadings();
   $('#reading-total').textContent = `${entries.length} ${entries.length === 1 ? 'reading' : 'readings'}`;
   $('#chart-empty').hidden = entries.length > 0;
   $('#history-chart').hidden = entries.length === 0;
+  $('#chart-empty').textContent = 'No readings match this period and context. Try another filter or add a reading.';
   $('#chart-summary').textContent = entries.length
-    ? `${Math.min(...entries.map(item => item.rate))}–${Math.max(...entries.map(item => item.rate))} breaths/min in this period${dog()?.threshold ? ` · Dashed line marks your threshold of ${dog().threshold}` : ''}`
+    ? `${Math.min(...entries.map(item => item.rate))}–${Math.max(...entries.map(item => item.rate))} breaths/min for the selected readings${dog()?.threshold ? ` · Dashed line marks the threshold you entered: ${dog().threshold}` : ''}`
     : 'Your observations will build a picture over time.';
   const list = $('#reading-list');
   list.replaceChildren();
@@ -158,7 +183,7 @@ function renderHistory() {
     date.textContent = dateFormat.format(new Date(entry.date));
     const meta = document.createElement('p');
     meta.className = 'reading-meta';
-    meta.textContent = `${entry.count} breaths counted over ${entry.seconds} seconds`;
+    meta.textContent = readingDetails(entry);
     details.append(date, meta);
     if (entry.notes) {
       const notes = document.createElement('p');
@@ -237,6 +262,7 @@ function drawChart() {
 function setLocked(locked) {
   $('#selected-dog').disabled = locked || !snapshot.dogs.length;
   for (const element of $$('[data-page], [data-duration], #add-dog, #edit-dog')) element.disabled = locked;
+  for (const element of $$('#manual-entry, #history-manual-entry')) element.disabled = locked || !dog() || !db;
 }
 
 function resetCounter(message = '') {
@@ -253,6 +279,8 @@ function resetCounter(message = '') {
   $('#cancel').hidden = true;
   $('#result').hidden = true;
   $('#reading-notes').value = '';
+  $('#reading-context').value = 'not-recorded';
+  $('#reading-uncertain').checked = false;
   $('#counter-instruction').textContent = 'Wait until your dog is settled or asleep.';
   $('#counter-status').textContent = message || (dog() ? 'Start the timer, then tap for each breath.' : 'Add your dog to begin.');
   setLocked(false);
@@ -282,7 +310,7 @@ function completeCount() {
   if (!finished.count) { resetCounter('No breaths were counted. Please try again.'); return; }
   pending = { id: crypto.randomUUID(), dogId: finished.dogId, date: finished.date,
     count: finished.count, seconds: finished.seconds,
-    rate: respiratoryRate(finished.count, finished.seconds), notes: '' };
+    rate: respiratoryRate(finished.count, finished.seconds), notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
   $('#timer-progress').value = finished.seconds;
   $('#timer-label').textContent = 'Measurement complete';
   $('#breath-button').disabled = true;
@@ -292,7 +320,7 @@ function completeCount() {
   $('#result').hidden = false;
   $('#result-rate').textContent = `${pending.rate} breaths per minute`;
   const exceeds = dog()?.threshold && pending.rate >= dog().threshold;
-  $('#result-threshold').textContent = exceeds ? `At or above your threshold of ${dog().threshold}. Follow the guidance your vet gave you.` : 'Review your count, add any notes, and save this moment.';
+  $('#result-threshold').textContent = exceeds ? `At or above the threshold you entered: ${dog().threshold} breaths/min. Follow the guidance your vet gave you.` : 'Review your count, add any notes, and save this moment.';
   $('#result-threshold').className = exceeds ? 'threshold-note' : 'muted';
   $('#counter-status').textContent = 'Reading ready to save.';
   $('#counter-instruction').textContent = `${finished.count} breaths counted in ${finished.seconds} seconds.`;
@@ -354,7 +382,7 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', () => { if (session) cancelCount(); });
 window.addEventListener('beforeunload', event => {
-  if (session || pending || saving) { event.preventDefault(); event.returnValue = ''; }
+  if (session || pending || saving || (manualDraft && manualDirty)) { event.preventDefault(); event.returnValue = ''; }
 });
 $('#save-reading').onclick = async () => {
   if (!pending || saving) return;
@@ -362,8 +390,11 @@ $('#save-reading').onclick = async () => {
   $('#save-reading').disabled = true;
   $('#discard').disabled = true;
   pending.notes = $('#reading-notes').value.trim();
+  pending.context = $('#reading-context').value;
+  pending.uncertain = $('#reading-uncertain').checked;
   try {
     await saveReading(db, pending);
+    revealSavedReading(pending);
     pending = null;
     resetCounter();
     await refreshAfterWrite();
@@ -375,6 +406,81 @@ $('#save-reading').onclick = async () => {
 $('#discard').onclick = async () => {
   if (await confirmAction('Discard this count?', 'The completed measurement has not been saved.', 'Discard')) {
     pending = null; resetCounter();
+  }
+};
+
+function openManual() {
+  if (!db || !dog() || session || pending || saving || manualDraft) return;
+  manualDraft = { id: crypto.randomUUID(), dogId: selectedId };
+  manualDirty = false;
+  $('#manual-form').reset();
+  $('#manual-error').textContent = '';
+  $('#manual-dog').textContent = `For ${dog().name}`;
+  $('#manual-timezone').textContent = `Times use this device’s time zone (${Intl.DateTimeFormat().resolvedOptions().timeZone}).`;
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  $('#manual-date').value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  $('#manual-dialog').showModal();
+  $('#manual-rate').focus();
+}
+function setManualBusy(busy) {
+  $('#manual-fields').disabled = busy;
+  for (const button of $$('#save-manual, #close-manual, #cancel-manual')) button.disabled = busy;
+}
+async function closeManual() {
+  if (saving || manualConfirming) return;
+  if (!manualDirty) { finishManual(); return; }
+  manualConfirming = true;
+  let discard = false;
+  try { discard = await confirmAction('Discard this entry?', 'The manual reading has not been saved.', 'Discard'); }
+  finally { manualConfirming = false; }
+  const action = manualDialogAction({ event: 'confirmed', dirty: manualDirty, discard, dialogOpen: $('#manual-dialog').open });
+  if (action === 'finish') finishManual();
+  else if (action === 'reopen' && manualDraft) $('#manual-dialog').showModal();
+}
+function finishManual() {
+  manualDraft = null;
+  manualDirty = false;
+  $('#manual-dialog').close();
+}
+$('#manual-entry').onclick = openManual;
+$('#history-manual-entry').onclick = openManual;
+$('#close-manual').onclick = closeManual;
+$('#cancel-manual').onclick = closeManual;
+$('#manual-form').addEventListener('input', () => { manualDirty = true; });
+// Browsers let a page cancel Escape only once per user activation, so a dirty dialog can still
+// close without Save or Discard. manualDialogAction (data.mjs) keeps one modal on top and the draft intact.
+$('#manual-dialog').addEventListener('cancel', event => {
+  const action = manualDialogAction({ event: 'cancel', dirty: manualDirty, cancelable: event.cancelable, confirmOpen: manualConfirming });
+  if (event.cancelable) event.preventDefault();
+  if (saving) return;
+  if (action === 'confirm') closeManual();
+  else if (action === 'finish') finishManual();
+});
+$('#manual-dialog').addEventListener('close', () => {
+  const action = manualDialogAction({ event: 'close', dirty: manualDirty && !!manualDraft, confirmOpen: manualConfirming });
+  if (action === 'reopen') $('#manual-dialog').showModal();
+  else if (action === 'clear') manualDraft = null;
+});
+$('#manual-form').onsubmit = async event => {
+  event.preventDefault();
+  if (!manualDraft || saving || !$('#manual-form').reportValidity()) return;
+  saving = true;
+  setManualBusy(true);
+  try {
+    const entry = { ...manualDraft, source: 'manual', count: null, seconds: null,
+      rate: Number($('#manual-rate').value), date: manualDate($('#manual-date').value),
+      context: $('#manual-context').value, uncertain: $('#manual-uncertain').checked, notes: $('#manual-notes').value.trim() };
+    await saveReading(db, entry);
+    finishManual();
+    revealSavedReading(entry);
+    await refreshAfterWrite();
+    notifyChange();
+    toast('Manual reading saved to your journal.');
+  } catch (error) { $('#manual-error').textContent = `Could not save the reading. ${error.message}`; }
+  finally {
+    saving = false;
+    setManualBusy(false);
   }
 };
 
@@ -399,11 +505,21 @@ function showPage(next) {
 $$('[data-page]').forEach(button => { button.onclick = () => showPage(button.dataset.page); });
 $('.brand').onclick = event => { event.preventDefault(); showPage('measure'); };
 $('#selected-dog').onchange = () => { selectedId = $('#selected-dog').value; renderProfiles(); renderLatest(); resetCounter(); };
-for (const button of $$('[data-range]')) button.onclick = () => {
-  range = button.dataset.range;
-  $$('[data-range]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
-  renderHistory();
-};
+function setRange(value) {
+  range = value;
+  $$('[data-range]').forEach(item => item.setAttribute('aria-pressed', String(item.dataset.range === value)));
+}
+for (const button of $$('[data-range]')) button.onclick = () => { setRange(button.dataset.range); renderHistory(); };
+function setHistoryContext(value) {
+  historyContext = value;
+  $('#history-context').value = value;
+}
+function revealSavedReading(entry) {
+  // A newly saved reading must not appear to be lost behind an earlier filter.
+  if (range !== 'all' && Date.parse(entry.date) < Date.now() - Number(range) * 86400000) setRange('all');
+  if (historyContext !== 'all' && historyContext !== entry.context) setHistoryContext('all');
+}
+$('#history-context').onchange = () => { setHistoryContext($('#history-context').value); renderHistory(); };
 window.addEventListener('resize', () => { if (page === 'history') drawChart(); });
 
 function previewPhoto() {
@@ -534,42 +650,35 @@ $('#install').onclick = async () => {
 function connectionStatus(ready = false) {
   $('#offline-status').textContent = navigator.onLine ? (ready ? 'Offline ready' : 'On this device') : 'Offline';
 }
-window.addEventListener('online', () => connectionStatus(!!navigator.serviceWorker?.controller));
-window.addEventListener('offline', () => connectionStatus());
-
-async function prepareOffline() {
-  connectionStatus();
-  if (!('serviceWorker' in navigator)) {
-    $('#cache-status').textContent = 'Offline loading is unavailable in this browser. Use a current browser over HTTPS.';
-    return;
+let updateStorage;
+try { updateStorage = window.localStorage; } catch { /* Version checks do not require storage. */ }
+const updates = createUpdateMonitor({ storage: updateStorage, onChange(state) {
+  const label = release => `${release.version} · build ${release.build}`;
+  $('#app-version').textContent = `Running ${label(state.running)}`;
+  $('#published-version').textContent = state.latest ? `Published ${label(state.latest)}` : '';
+  $('#update-status').textContent = state.message;
+  $('#last-update-check').textContent = state.checked
+    ? `Last successful check: ${dateFormat.format(new Date(state.checked))}` : 'No successful update check yet.';
+  $('#check-updates').disabled = state.checking;
+  $('#update-notice').hidden = !state.waiting && !state.activationChanged;
+  $('#update-notice').textContent = state.message;
+  $('#cache-status').textContent = !state.supported ? 'Offline loading is unavailable in this browser. Use a current browser over HTTPS.'
+    : state.offlineReady ? 'App saved for offline use. Offline readiness does not indicate whether the app is up to date.'
+    : 'Offline setup is not complete. Connect to the internet and check for updates.';
+  connectionStatus(state.offlineReady);
+} });
+function prepareOffline() { return updates.check(); }
+$('#check-updates').onclick = () => updates.check();
+window.addEventListener('online', () => updates.check());
+window.addEventListener('offline', () => updates.refresh());
+// Home-screen apps can stay alive for days. Refresh update information when resumed.
+let lastResumeCheck = 0;
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && Date.now() - lastResumeCheck > 60000) {
+    lastResumeCheck = Date.now();
+    updates.check();
   }
-  try {
-    const registration = await navigator.serviceWorker.register('./sw.js');
-    if (!registration.active) {
-      const worker = registration.installing || registration.waiting;
-      if (!worker) throw new Error('Offline worker unavailable.');
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => finish(new Error('Offline setup timed out.')), 20000);
-        function finish(error) {
-          clearTimeout(timeout);
-          worker.removeEventListener('statechange', changed);
-          if (error) reject(error);
-          else resolve();
-        }
-        function changed() {
-          if (worker.state === 'activated') finish();
-          if (worker.state === 'redundant') finish(new Error('Offline setup failed.'));
-        }
-        worker.addEventListener('statechange', changed);
-        changed();
-      });
-    }
-    connectionStatus(true);
-    $('#cache-status').textContent = 'App saved for offline use. Updates take effect after all open app windows close.';
-  } catch {
-    $('#cache-status').textContent = 'Offline setup did not complete. Reopen the app with an internet connection to try again.';
-  }
-}
+});
 
 try {
   db = await openDatabase();
@@ -579,5 +688,5 @@ try {
   for (const button of $$('#add-dog, #settings-add-dog, #backup, #restore, #csv-export')) button.disabled = true;
   showError(new Error(`Your journal could not open. ${error.message} Check browser storage permissions and reload.`));
   $('#counter-status').textContent = 'Storage must be available before recording a reading.';
-  connectionStatus();
+  connectionStatus(updates.getState().offlineReady);
 }

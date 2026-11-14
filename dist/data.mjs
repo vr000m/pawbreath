@@ -1,5 +1,22 @@
 export const FORMAT = 'pawbreath';
-export const VERSION = 1;
+export const VERSION = 2;
+// The single definition of measurement contexts. `label` is the form option, `filter` the History
+// filter option and `short` the History/latest-reading description. Order is the form order.
+export const CONTEXT_LABELS = Object.freeze({
+  'not-recorded': Object.freeze({ label: 'Not recorded', filter: 'Context not recorded', short: 'Context not recorded' }),
+  asleep: Object.freeze({ label: 'Asleep · settled sleep', filter: 'Asleep · settled sleep', short: 'Asleep' }),
+  resting: Object.freeze({ label: 'Resting · calm and awake', filter: 'Resting · calm and awake', short: 'Resting' }),
+  restless: Object.freeze({ label: 'Restless', filter: 'Restless', short: 'Restless' }),
+});
+export const CONTEXTS = Object.freeze(Object.keys(CONTEXT_LABELS));
+
+// Version 1 records predate source, context and uncertainty. Absent fields mean a timed reading
+// with no recorded context; a present but invalid value (including null) is left for validation.
+export function withReadingDefaults(reading) {
+  return { ...reading, source: reading.source === undefined ? 'timed' : reading.source,
+    context: reading.context === undefined ? 'not-recorded' : reading.context,
+    uncertain: reading.uncertain === undefined ? false : reading.uncertain };
+}
 
 function requireValue(condition, message) {
   if (!condition) throw new Error(message);
@@ -33,18 +50,62 @@ export function respiratoryRate(count, seconds) {
 export function validateReading(reading) {
   requireValue(reading && validId(reading.id) && validId(reading.dogId), 'A reading has an invalid ID.');
   requireValue(validDate(reading.date), 'A reading has an invalid date.');
-  requireValue(Number.isInteger(reading.count) && reading.count > 0 && reading.count <= 10000,
-    'A reading must contain a positive breath count.');
-  requireValue([30, 60].includes(reading.seconds), 'A reading must use a 30- or 60-second count.');
-  requireValue(reading.rate === respiratoryRate(reading.count, reading.seconds), 'A reading has an inconsistent breathing rate.');
+  const { source, context, uncertain } = withReadingDefaults(reading);
+  requireValue(['timed', 'manual'].includes(source), 'A reading has an invalid source.');
+  requireValue(CONTEXTS.includes(context), 'Choose a valid measurement context.');
+  requireValue(typeof uncertain === 'boolean', 'A reading has an invalid uncertainty flag.');
+  if (source === 'timed') {
+    requireValue(Number.isInteger(reading.count) && reading.count > 0 && reading.count <= 10000,
+      'A reading must contain a positive breath count.');
+    requireValue([30, 60].includes(reading.seconds), 'A reading must use a 30- or 60-second count.');
+    requireValue(reading.rate === respiratoryRate(reading.count, reading.seconds), 'A reading has an inconsistent breathing rate.');
+  } else {
+    requireValue(reading.count === null && reading.seconds === null,
+      'Manual readings must not invent a breath count or measurement duration.');
+    requireValue(Number.isFinite(reading.rate) && reading.rate > 0 && reading.rate <= 300 &&
+      Math.round(reading.rate * 10) / 10 === reading.rate,
+      'Enter a positive breathing rate with at most one decimal place (maximum 300).');
+  }
   requireValue(typeof reading.notes === 'string' && reading.notes.length <= 2000, 'Notes must contain at most 2,000 characters.');
   return { id: reading.id, dogId: reading.dogId, date: reading.date, count: reading.count,
-    seconds: reading.seconds, rate: reading.rate, notes: reading.notes };
+    seconds: reading.seconds, rate: reading.rate, notes: reading.notes, source, context, uncertain };
+}
+
+// datetime-local is interpreted in this device's time zone; reject normalization of
+// nonexistent dates/times rather than silently changing the original observation.
+export function manualDate(value, now = Date.now()) {
+  requireValue(typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value),
+    'Enter the original measurement date and time.');
+  const date = new Date(value);
+  const parts = value.split(/[-T:]/).map(Number);
+  requireValue(Number.isFinite(date.getTime()) && date.getFullYear() === parts[0] &&
+    date.getMonth() + 1 === parts[1] && date.getDate() === parts[2] &&
+    date.getHours() === parts[3] && date.getMinutes() === parts[4], 'Enter a valid local date and time.');
+  // A two-digit year typed into a datetime-local field is a first-century year, not 20xx.
+  requireValue(date.getFullYear() >= 1970, 'Check the year: the measurement date must be 1970 or later.');
+  requireValue(date.getTime() <= now, 'The measurement date cannot be in the future.');
+  return date.toISOString();
+}
+
+// Manual-entry dialog close policy. Browsers let a page cancel Escape only once per user activation;
+// a later Escape fires a non-cancelable `cancel` and closes the dialog regardless. The invariant: a
+// dirty draft is never lost without Discard, and at most one modal is on top (the discard confirm,
+// when open, is above the manual dialog, never below it).
+//   cancel + cancelable  -> 'confirm' when dirty (ask to discard), else 'finish'
+//   cancel + !cancelable -> 'none'; the dialog closes anyway and the close event decides
+//   close                -> 'reopen' when dirty and no confirm is open; 'none' while the confirm
+//                           decides (it reopens on keep); 'clear' when clean
+//   confirm resolved     -> 'finish' on discard; on keep, 'reopen' if the dialog was closed meanwhile
+export function manualDialogAction({ event, dirty, cancelable = false, confirmOpen = false, dialogOpen = true, discard = false }) {
+  if (event === 'cancel') return !cancelable || confirmOpen ? 'none' : dirty ? 'confirm' : 'finish';
+  if (event === 'close') return !dirty ? 'clear' : confirmOpen ? 'none' : 'reopen';
+  if (event === 'confirmed') return discard ? 'finish' : dialogOpen ? 'none' : 'reopen';
+  throw new Error(`Unknown manual dialog event: ${event}`);
 }
 
 export function validateBackup(input) {
-  requireValue(input && input.format === FORMAT && input.version === VERSION,
-    'Choose a Pawbreath version 1 backup (.json).');
+  requireValue(input && input.format === FORMAT && [1, VERSION].includes(input.version),
+    'Choose a Pawbreath version 1 or 2 backup (.json).');
   requireValue(Array.isArray(input.dogs) && Array.isArray(input.readings), 'This backup is incomplete.');
   const dogs = input.dogs.map(validateDog);
   const readings = input.readings.map(validateReading);
@@ -72,9 +133,18 @@ function csvCell(value) {
 
 export function toCsv(snapshot) {
   const names = new Map(snapshot.dogs.map(dog => [dog.id, dog.name]));
-  const rows = [['Dog', 'Timestamp (UTC)', 'Breaths per minute', 'Breaths counted', 'Seconds', 'Notes']];
-  for (const reading of [...snapshot.readings].sort((a, b) => a.date.localeCompare(b.date))) {
-    rows.push([names.get(reading.dogId) ?? '', reading.date, reading.rate, reading.count, reading.seconds, reading.notes]);
+  const rows = [['Dog', 'Timestamp (UTC)', 'Breaths per minute', 'Breaths counted', 'Seconds', 'Notes', 'Source', 'Context', 'Uncertain']];
+  // Sorting must not throw on a stored record whose date is missing or not a string.
+  const dateKey = reading => String(reading.date ?? '');
+  for (const reading of [...snapshot.readings].sort((a, b) => dateKey(a).localeCompare(dateKey(b)))) {
+    // Export is a data-rescue path: normalise a valid record, otherwise write what is stored
+    // rather than aborting and withholding every other reading.
+    let entry;
+    try { entry = validateReading(reading); } catch {
+      entry = { ...withReadingDefaults(reading), notes: reading.notes ?? '' };
+    }
+    rows.push([names.get(entry.dogId) ?? '', entry.date ?? '', entry.rate ?? '', entry.count ?? '', entry.seconds ?? '',
+      entry.notes, entry.source, entry.context, entry.uncertain === true ? 'Yes' : 'No']);
   }
   return '\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n');
 }
