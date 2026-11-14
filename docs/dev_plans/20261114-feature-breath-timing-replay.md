@@ -83,9 +83,9 @@ A browser cannot render separate pulses for taps closer than a display frame; st
 
 ## Final results — 14 November 2026
 
-Unreleased 1.2.0 build `b46ba9c9399c` (previously `24ef303881c6`; see the code-review fixes below), stacked on Claude's `5266564`. No deployment, merge, push or PR mutation.
+Unreleased 1.2.0 build `edf79fb91c75` (previously `b46ba9c9399c` and `24ef303881c6`; see the code-review fixes and layout follow-up below), stacked on Claude's `5266564`. No deployment, merge, push or PR mutation.
 
-- `npm test` and `just deploy-check`: 81 tests pass; metadata/syntax checks and Wrangler dry run pass. Browser harness: 26 checks pass, including save/restore timing equality, save failure/retry, caller mutation, per-point and newest-first replay, same-date points, context/export separation, resize, reduced motion and all cancellation paths.
+- `npm test` and `just deploy-check`: 81 tests pass; metadata/syntax checks and Wrangler dry run pass. Browser harness: 26 checks pass (the replay check now also asserts stable layout), including save/restore timing equality, save failure/retry, caller mutation, per-point and newest-first replay, same-date points, context/export separation, resize, reduced motion and all cancellation paths.
 - Real Chromium touch profiles at 390×844 and 440×956: a service-worker upgrade from 1.1.0 build `6379aad6d342` waits while a count/form is active. After closure, 1.2.0 retains the exact old journal. New recordings retain offsets including Undo, and replay after an offline reload. No browser errors; no horizontal overflow; replay controls are at least 44px tall. Screenshots inspected. These are emulations, not physical Safari checks.
 - Invariant audit: the sole accepted-click path pushes one elapsed offset and derives count from array length; Undo pops and derives the same count. Completion copies the array. Validation copies before asynchronous IndexedDB work. Backup restore and replay both use that validator; the replay snapshot is frozen. A generation token rejects stale callbacks, and frames derive the current clip/tap directly from elapsed time. Only the active point receives a ring; playback never calls `tapSound.play()` or storage writes.
 - Manual code/security/docs audit found no remaining blocking issue. No new dependencies, external destinations or credentials. The worker precaches and verifies the replay module. Rendering reuses a cached chart image instead of sorting/redrawing all history each frame. README/changelog and the baseline recovery correction match format 3 and unreleased status.
@@ -98,3 +98,8 @@ Physical checks remain pending on both iPhone 12 and iPhone 17 Pro Max: Safari a
 - Chart hit targets and **Replay newest first** use the list History last rendered and validated, so a stored trace that fails validation has no chart target, and a replay never re-filters by a later clock.
 - Per-frame work is skipped when nothing changed (progress text, identical ring), and focus returns to **Replay newest first** when Stop is disabled. The CSV-equality test now compares a real untimed record.
 - Not changed: timing is captured when the click handler runs, not from the event timestamp; additive restore cannot add timing to an existing untimed record with the same ID.
+
+### Replay layout follow-up (14 November 2026)
+
+- The replaying row is marked by an inset bar and tint inside its existing padding (no `padding-left`), so its text never reflows. `#replay-status`/`#replay-progress` reserve one line and `#replay-detail` keeps its space, hidden with `visibility` plus `aria-hidden`/`inert` while inactive. The harness asserts the list heading's offset and the row's text box are identical before, during, after Stop and after a finished sequence; reverting the CSS fails it.
+- The counting session no longer stores `count`; every read derives it from `tapOffsetsMs.length`. `scrollIntoView` drops the `behavior` option for older Safari.

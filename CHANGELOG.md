@@ -14,6 +14,7 @@ User-visible changes are recorded here. Unreleased changes have not been deploye
 
 ### Fixed
 
+- History no longer jumps when a replay starts, advances or ends: the replaying reading is highlighted without reflowing its text, and the replay detail keeps its space.
 - Active Undo/Cancel controls stay below the counting target, including with bottom safe-area insets. Short screens can scroll outside the target without controls intercepting breath taps; idle Start stays pinned.
 - The breath button shows a stable “Count one breath” label matching its accessible name, with the count exposed separately.
 - Ticking Quiet tap sound now shows whether sound is actually available; if not, it says “Tap sound is not available on this device.” and unticks.

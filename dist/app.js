@@ -50,6 +50,13 @@ const chartBackground = document.createElement('canvas');
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const replay = createReplayController({ onFrame: renderReplay, onEnd: () => stopReplay('Replay finished.') });
 
+// The detail panel keeps its layout space; inactive, it is invisible, unfocusable and hidden from assistive tech.
+function setReplayDetail(active) {
+  const detail = $('#replay-detail');
+  detail.inert = !active;
+  detail.setAttribute('aria-hidden', String(!active));
+}
+
 function stopReplay(message = 'Replay stopped.') {
   replay.stop();
   if (!replayState) return;
@@ -58,7 +65,7 @@ function stopReplay(message = 'Replay stopped.') {
   // A disabled Stop button must not strand keyboard and screen-reader focus.
   const refocus = document.activeElement === stop && !document.hidden && !$('#replay-all').disabled;
   $('#replay-status').textContent = message;
-  $('#replay-detail').hidden = true;
+  setReplayDetail(false);
   stop.disabled = true;
   if (refocus) $('#replay-all').focus({ preventScroll: true });
   for (const row of $$('.reading-row')) row.classList.remove('replaying');
@@ -70,7 +77,7 @@ function startReplay(entries) {
   stopReplay();
   if (replay.start(entries)) {
     $('#replay-stop').focus({ preventScroll: true });
-    $('#history-chart').scrollIntoView({ block: 'center', behavior: 'instant' });
+    $('#history-chart').scrollIntoView({ block: 'center' });
   }
 }
 
@@ -79,7 +86,7 @@ function renderReplay(state) {
   replayState = state;
   if (changed) {
     $('#replay-stop').disabled = false;
-    $('#replay-detail').hidden = false;
+    setReplayDetail(true);
     $('#replay-status').textContent = `Replaying ${dateFormat.format(new Date(state.entry.date))} · ${state.index + 1} of ${state.total}.`;
     for (const row of $$('.reading-row')) row.classList.toggle('replaying', row.dataset.readingId === state.entry.id);
     drawTapTimeline();
@@ -479,11 +486,12 @@ function completeCount() {
   if (!finished) return;
   stopTimer();
   session = null;
-  if (!finished.count) { resetCounter('No breaths were counted. Please try again.'); return; }
+  const count = finished.tapOffsetsMs.length;
+  if (!count) { resetCounter('No breaths were counted. Please try again.'); return; }
   leaveCountingView();
   pending = { id: crypto.randomUUID(), dogId: finished.dogId, date: finished.date,
-    count: finished.count, seconds: finished.seconds, tapOffsetsMs: [...finished.tapOffsetsMs],
-    rate: respiratoryRate(finished.count, finished.seconds), notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
+    count, seconds: finished.seconds, tapOffsetsMs: [...finished.tapOffsetsMs],
+    rate: respiratoryRate(count, finished.seconds), notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
   $('#timer-progress').value = finished.seconds;
   $('#timer-label').textContent = 'Measurement complete';
   $('#breath-button').disabled = true;
@@ -496,8 +504,8 @@ function completeCount() {
   $('#result-threshold').textContent = exceeds ? `At or above the threshold you entered: ${dog().threshold} breaths/min. Follow the guidance your vet gave you.` : 'Review your count, add any notes, and save this moment.';
   $('#result-threshold').className = exceeds ? 'threshold-note' : 'muted';
   $('#counter-status').textContent = 'Reading ready to save.';
-  $('#counter-label').textContent = finished.count === 1 ? 'breath counted' : 'breaths counted';
-  $('#counter-instruction').textContent = `${finished.count} breaths counted in ${finished.seconds} seconds.`;
+  $('#counter-label').textContent = count === 1 ? 'breath counted' : 'breaths counted';
+  $('#counter-instruction').textContent = `${count} breaths counted in ${finished.seconds} seconds.`;
   $('#save-reading').focus();
 }
 
@@ -513,7 +521,7 @@ $('#start').onclick = async () => {
   if (!dog() || session || pending) return;
   stopReplay();
   $('#error').hidden = true;
-  session = { dogId: selectedId, date: new Date().toISOString(), started: performance.now(), seconds: duration, count: 0, tapOffsetsMs: [] };
+  session = { dogId: selectedId, date: new Date().toISOString(), started: performance.now(), seconds: duration, tapOffsetsMs: [] };
   setLocked(true);
   $('#start').hidden = true;
   $('#undo').hidden = false;
@@ -543,8 +551,8 @@ $('#breath-button').onclick = event => {
   const elapsed = performance.now() - session.started;
   if (elapsed >= session.seconds * 1000) { completeCount(); return; }
   session.tapOffsetsMs.push(Math.floor(elapsed));
-  session.count = session.tapOffsetsMs.length;
-  $('#counter-number').textContent = session.count;
+  // The count is always the trace length; no separate counter can drift from it.
+  $('#counter-number').textContent = session.tapOffsetsMs.length;
   $('#undo').disabled = false;
   tapSound.play();
 };
@@ -570,9 +578,8 @@ $('#undo').onclick = () => {
   if (!session) return;
   if (performance.now() - session.started >= session.seconds * 1000) { completeCount(); return; }
   session.tapOffsetsMs.pop();
-  session.count = session.tapOffsetsMs.length;
-  $('#counter-number').textContent = session.count;
-  $('#undo').disabled = session.count === 0;
+  $('#counter-number').textContent = session.tapOffsetsMs.length;
+  $('#undo').disabled = session.tapOffsetsMs.length === 0;
 };
 $('#cancel').onclick = () => cancelCount();
 countingDialog.addEventListener('cancel', event => {

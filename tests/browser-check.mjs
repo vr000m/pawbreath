@@ -106,10 +106,10 @@ await check('Counting dialog restores the card on every exit and isolates later 
   for (const key of ['Enter',' ']) {
     const repeat = new KeyboardEvent('keydown', {key,repeat:true,cancelable:true});
     $('#breath-button').dispatchEvent(repeat);
-    assert(repeat.defaultPrevented && session.count===0, 'Held key repeated a count');
+    assert(repeat.defaultPrevented && session.tapOffsetsMs.length===0, 'Held key repeated a count');
   }
   for (const type of ['pointerdown','pointercancel','pointerup']) $('#breath-button').dispatchEvent(new PointerEvent(type, {pointerId:1,pointerType:'touch'}));
-  assert(session.count===0, 'Raw/cancelled pointer sequence changed the count');
+  assert(session.tapOffsetsMs.length===0, 'Raw/cancelled pointer sequence changed the count');
   countingDialog.dispatchEvent(new Event('cancel', {cancelable:true})); restored();
   assert(document.activeElement === $('#start'), 'Cancel focus not restored');
   $('#start').click();
@@ -143,19 +143,19 @@ await check('Delayed audio never blocks counting or replays tones into a later s
     assert(timer && session && countingDialog.open, 'Audio delayed the measurement');
     const requested=resumes.length;
     $('#breath-button').click(); $('#breath-button').click();
-    assert(session.count===2 && tones===0, 'Suspended audio affected counting');
+    assert(session.tapOffsetsMs.length===2 && tones===0, 'Suspended audio affected counting');
     assert(resumes.length===requested+2, 'A tap on suspended audio did not request resume');
     $('#cancel').click(); $('#tap-sound').checked=false; $('#start').click();
     const next=session;
     context.state='running'; resumes[0].resolve(); await sleep(0);
-    assert(session===next && session.count===0 && tones===0, 'Late audio changed a later session');
-    $('#breath-button').click(); assert(session.count===1 && tones===0, 'Opt-out made a tone');
+    assert(session===next && session.tapOffsetsMs.length===0 && tones===0, 'Late audio changed a later session');
+    $('#breath-button').click(); assert(session.tapOffsetsMs.length===1 && tones===0, 'Opt-out made a tone');
     $('#cancel').click(); $('#tap-sound').checked=true; context.state='suspended'; $('#start').click();
     resumes.at(-1).reject(new Error('Audio denied')); await sleep(0);
-    $('#breath-button').click(); assert(session.count===1 && tones===0, 'Rejected audio blocked counting');
+    $('#breath-button').click(); assert(session.tapOffsetsMs.length===1 && tones===0, 'Rejected audio blocked counting');
     context.state='running'; $('#breath-button').click();
-    assert(session.count===2 && tones===1, 'Accepted click did not produce exactly one tone');
-    $('#undo').click(); assert(session.count===1 && tones===1, 'Undo requested a breath tone');
+    assert(session.tapOffsetsMs.length===2 && tones===1, 'Accepted click did not produce exactly one tone');
+    $('#undo').click(); assert(session.tapOffsetsMs.length===1 && tones===1, 'Undo requested a breath tone');
   } finally { $('#cancel').click(); Object.assign(tapSound,original); $('#tap-sound').checked=checked; }
 });
 await check('Ticking tap sound reports real audio availability and never blocks counting', async () => {
@@ -170,7 +170,7 @@ await check('Ticking tap sound reports real audio availability and never blocks 
     assert($('#counter-status').textContent === 'Tap sound is not available on this device.', 'Missing audio status: ' + $('#counter-status').textContent);
     assert(!box.checked, 'Unavailable sound left the box ticked');
     $('#start').click(); $('#breath-button').click();
-    assert(session && session.count === 1 && $('#counter-status').textContent === 'Keep this screen open while counting.', 'Unavailable sound affected counting');
+    assert(session && session.tapOffsetsMs.length === 1 && $('#counter-status').textContent === 'Keep this screen open while counting.', 'Unavailable sound affected counting');
     $('#cancel').click();
     Object.assign(tapSound, createTapSound(class { constructor() { throw new Error('No audio'); } }));
     await tickBox();
@@ -318,7 +318,7 @@ await check('Checking and downloading updates preserves active counts, results a
   $('#breath-button').click();
   const active = session;
   await updates.check();
-  assert(session === active && session.count === 1, 'Update check interrupted counting');
+  assert(session === active && session.tapOffsetsMs.length === 1, 'Update check interrupted counting');
   assert($('#app-version').textContent.includes(RELEASE.build), 'Running build missing');
   assert($('#update-status').textContent.includes('latest published'), 'Latest check missing');
   const worker = new EventTarget();
@@ -332,7 +332,7 @@ await check('Checking and downloading updates preserves active counts, results a
   assert(session === active && !$('#update-notice').hidden, 'Waiting update interrupted count or hid notice');
   const notice = $('#update-notice'), message = notice.textContent;
   $('#breath-button').click();
-  assert(session === active && session.count === 2, 'Mid-count notice altered counting');
+  assert(session === active && session.tapOffsetsMs.length === 2, 'Mid-count notice altered counting');
   const announced = [];
   const observer = new MutationObserver(records => { for (const r of records) for (const n of r.addedNodes) announced.push(n.textContent); });
   observer.observe(notice, {childList:true, characterData:true, subtree:true});
@@ -452,8 +452,20 @@ await check('History replays individual points and visible readings newest first
     assert(chartPoints.length === 3 && !chartPoints.some(p=>p.entry.id==='replay-bad'), 'Chart offered a point that cannot replay');
     assert($('#reading-list').textContent.includes('Tap timing unavailable'), 'Untimed status missing');
     const row = id => [...document.querySelectorAll('.reading-row')].find(r=>r.dataset.readingId===id);
+    // Layout must not move: the list heading below the replay detail and the replaying row's text stay put.
+    const layout = () => {
+      const chartTop = $('#history-chart').getBoundingClientRect().top;
+      const heading = $('#reading-total').closest('.section-heading').getBoundingClientRect();
+      const details = row('replay-old').querySelector('.reading-details').getBoundingClientRect();
+      return JSON.stringify([heading.top - chartTop, details.left, details.width]);
+    };
+    $('#replay-status').textContent = ''; $('#replay-progress').textContent = '';
+    const idleLayout = layout();
     row('replay-old').querySelector('.replay-reading').click();
     assert(replayState.entry.id === 'replay-old' && replayState.total === 1 && replayState.tapCount === 0, 'Individual replay wrong');
+    await sleep(40);
+    assert(row('replay-old').classList.contains('replaying') && $('#replay-detail').getAttribute('aria-hidden') === 'false', 'Replay detail or row cue missing');
+    assert(layout() === idleLayout, 'Starting replay moved layout: ' + idleLayout + ' -> ' + layout());
     const announcement = $('#replay-status').textContent;
     fakeNow += 1000; await sleep(40);
     assert(replayState.tapCount === 1 && $('#replay-status').textContent === announcement, 'Tap changed live announcement');
@@ -470,6 +482,8 @@ await check('History replays individual points and visible readings newest first
       assert(radii.includes(7) && !radii.some(r=>r>7), 'Reduced motion still pulses');
     } finally { delete reducedMotion.matches; CanvasRenderingContext2D.prototype.arc = arc; }
     $('#replay-stop').click(); assert(!replayState && $('#replay-stop').disabled, 'Stop left playback alive');
+    assert(layout() === idleLayout, 'Stopping replay moved layout: ' + idleLayout + ' -> ' + layout());
+    assert($('#replay-detail').inert && $('#replay-detail').getAttribute('aria-hidden') === 'true' && getComputedStyle($('#replay-detail')).visibility === 'hidden', 'Inactive replay detail exposed');
     drawChart(); const point = chartPoints.find(p=>p.entry.id==='replay-old');
     const rect = $('#history-chart').getBoundingClientRect();
     $('#history-chart').dispatchEvent(new MouseEvent('click',{clientX:rect.left+point.x,clientY:rect.top+point.y}));
@@ -484,6 +498,7 @@ await check('History replays individual points and visible readings newest first
     assert(replayState.entry.id === 'replay-old', 'Older reading was not next');
     fakeNow += 30000; await sleep(40);
     assert(!replayState && $('#replay-status').textContent === 'Replay finished.', 'Sequence failed to finish');
+    assert(layout() === idleLayout, 'Finished replay moved layout: ' + idleLayout + ' -> ' + layout());
     $('#history-context').value = 'resting'; $('#history-context').onchange(); $('#replay-all').click();
     assert(replayState.entry.id === 'replay-old' && replayState.total === 1, 'Sequence ignored context filter');
     assert(toCsv(snapshot).includes('2026-11-14T12:00:00.000Z'), 'Replay filtering changed export scope');

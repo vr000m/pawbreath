@@ -702,9 +702,19 @@ h1 {
   margin-top:6px;
 }
 
+/* Paint-only cue: the bar sits inside the row's 4px side padding, so text never reflows. */
 .reading-row.replaying {
   box-shadow:inset 3px 0 #42745a;
-  padding-left:12px;
+  background:rgba(66,116,90,.08);
+}
+
+/* Replay text and detail keep their space reserved so content below never jumps. */
+#replay-status, #replay-progress {
+  min-height:1.6em;
+}
+
+#replay-detail[aria-hidden="true"] {
+  visibility:hidden;
 }
 
 #tap-timeline {
