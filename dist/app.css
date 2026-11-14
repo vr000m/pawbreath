@@ -1216,3 +1216,41 @@ nav button[aria-current=page] svg .knob {
     display:none;
   }
 }
+
+/* Wide screens: the dog picker sits in the same place on Measure and History, left-aligned under the
+   heading as on a phone, with the History period toggle beside it. */
+@media(min-width:601px) {
+  #measure-page .page-heading {
+    display:block;
+  }
+  #measure-page .dog-picker {
+    display:grid;
+    grid-template-columns:260px max-content;
+    justify-content:start;
+    align-items:end;
+    gap:0 14px;
+    min-width:0;
+    max-width:none;
+    padding-top:0;
+    margin-top:26px;
+  }
+  #measure-page .dog-picker label {
+    grid-column:1/-1;
+    margin-bottom:6px;
+  }
+  #measure-page .dog-picker .text-button {
+    align-self:center;
+    padding-left:6px;
+  }
+  .history-toolbar {
+    justify-content:flex-start;
+    gap:14px 20px;
+  }
+  .history-toolbar .history-dog-picker {
+    flex:0 0 260px;
+    max-width:260px;
+  }
+  .history-toolbar .dog-picker label {
+    margin-bottom:6px;
+  }
+}
