@@ -62,6 +62,7 @@ test('phone layout: SVG tab icons, History controls in one toolbar, Export CSV b
   const settings = html.match(/<section id="settings-page"[\s\S]*?<footer/)[0];
   assert.ok(settings.includes('id="csv-export"') && settings.includes('id="home-screen-card"'));
   assert.ok(!/<p class="small muted">For sleeping readings/.test(html), 'the card keeps one instruction line');
+  assert.ok(html.includes('<meta name="mobile-web-app-capable" content="yes">'), 'the non-prefixed standalone meta replaces the deprecated Apple-only one');
 });
 
 test('installed mode hides only the install steps; the offline status stays visible', () => {

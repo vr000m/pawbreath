@@ -710,7 +710,7 @@ h1 {
 
 footer {
   font-family:Georgia,serif;
-  color:#819078;
+  color:var(--muted);
   font-style:italic;
   font-size:13px;
   text-align:center;
@@ -1204,6 +1204,15 @@ nav button[aria-current=page] svg .knob {
 /* Once installed, the install instructions are noise. The offline status in the same card is not. */
 @media(display-mode:standalone) {
   .install-steps {
+    display:none;
+  }
+}
+
+/* Short phones (about 600px of visible height or less): mid-count, drop the duration picker and the
+   instruction line so the whole circle clears the pinned Undo/Cancel bar. */
+@media(max-width:600px) and (max-height:640px) {
+  #measure-page:has(.breath-circle.active) .counter-card .card-top,
+  #measure-page:has(.breath-circle.active) #counter-instruction {
     display:none;
   }
 }

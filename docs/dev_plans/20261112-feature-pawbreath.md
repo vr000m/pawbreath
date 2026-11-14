@@ -49,7 +49,7 @@ flowchart LR
 
 ## Verification and acceptance
 
-Verified 13 November 2026 for release 1.1.0, build `712606f9fe4f`:
+Verified 13 November 2026 for release 1.1.0, build `aab49586c5f9`:
 
 - [x] `npm test`: 61 Node tests, release metadata and syntax checks pass; `just deploy-check` completes the Wrangler dry run.
 - [x] Browser harness: 18 checks (all pass in headless Chromium) cover real IndexedDB writes, failures/rollback, concurrent connections, repeated restore, hostile text, timer boundaries, manual entry, threshold independence, context filters and save visibility. Its worker registration is simulated.
