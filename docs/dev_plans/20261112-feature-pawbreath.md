@@ -50,10 +50,22 @@ flowchart LR
 
 ## Verification and acceptance
 
-Verified 13 November 2026 for release 1.1.0, build `63316a30696f`:
+Verified 13 November 2026 for release 1.1.0, build `78824a1cc956`:
 
 - [x] `npm test`: 68 Node tests, release metadata and syntax checks pass; `just deploy-check` completes the Wrangler dry run.
-- [x] Browser harness: 20 checks (all pass in headless Chromium) cover real IndexedDB writes, failures/rollback, concurrent connections, repeated restore, hostile text, timer boundaries, manual entry, threshold independence, context filters, save visibility and the count circle clearing the pinned Undo/Cancel bar mid-count in one frame resized to 13 phone sizes from 320x480 to 390x844 (clearing only the solid Undo button at 667 and 680, inside the bar's fade band). A long dog name in both pickers at 320px is a smoke check only (Chromium shrinks the select even without the fix); the structure test on the picker rules is its regression guard. Its worker registration is simulated.
+- [x] Browser harness: 21 checks (all pass in headless Chromium) cover real IndexedDB writes, failures/rollback, concurrent connections, repeated restore, hostile text, timer boundaries, manual entry, threshold independence, context filters, save visibility and the count circle clearing the pinned Undo/Cancel bar mid-count in one frame resized to 13 phone sizes from 320x480 to 390x844 (clearing only the solid Undo button at 667 and 680, inside the bar's fade band). A second frame with the bottom safe-area inset set to 20, 34 and 48px checks 13 more sizes: the circle clears the solid Undo button from 667 to 740px tall, the whole bar from 733px, and keeps its full size on tall phones with a 34px inset (375x762, 390x797, 390x844). A long dog name in both pickers at 320px is a smoke check only (Chromium shrinks the select even without the fix); the structure test on the picker rules is its regression guard. Its worker registration is simulated.
+- [x] Bottom safe-area inset, measured mid-count in Chromium with `env(safe-area-inset-bottom)` replaced by a fixed value (circle bottom minus the top of the solid Undo button; positive means it covers Undo; width makes no difference from 360 to 414). The inset lifts the pinned bar, and the height breakpoints cannot see it, so the circle now gives up the part of the inset the layout has no room for. With no inset nothing changes.
+
+  | Height | 20px before | 20px now | 34px before | 34px now | 48px now |
+  |---|---|---|---|---|---|
+  | 480 | -12.6 | -12.6 | +1.4 | +1.4 | +15.4 |
+  | 640 | -26 | -26 | -26 | -26 | -26 |
+  | 667 | +17.6 | -2.4 | +31.6 | +1.6 | +15.6 |
+  | 700 | -6.4 | -2.4 | +7.6 | -2.4 | -2.4 |
+  | 740 | -26 | -26 | -21.6 | -21.6 | -7.6 |
+  | 780 and up | -26 | -26 | -26 | -26 | -26 |
+
+  A 34px inset comes from home-indicator iPhones, which are at least 812px tall; in the installed app the status bar takes about 44-54px, so their viewport should be about 758px or more, where nothing overlaps either way (inferred, not checked on a device). Android Chrome reports the navigation bar as an inset only when it draws edge to edge (newer versions with `viewport-fit=cover`); there a 640-740px tall viewport with a 20-48px inset is plausible but unchecked. The 150px minimum circle still lets an inset over about 30px reach Undo at 667-683px or 480px tall.
 - [x] Recorded 375px layout checks show no horizontal overflow; manual Save/Cancel controls remain reachable.
 - [x] Phone layout pass checked in Chromium DevTools emulation at 390x844, 375x667, a 568px-tall phone and 320x480, plus 1280x800: Start reachable on Measure, the count circle clears the Undo/Cancel bar mid-count, both dog pickers start at the same position, no horizontal overflow. A Lighthouse mobile audit was run; the one open finding is the breath button's accessible name ("Count one breath") not matching its visible text.
 - [x] Separate real localhost Chromium upgrade from `b54a8e48353a` to `a3f2bc133df7`: the worker waited through an active count, pending result notes, dirty manual form and profile edits. Closing one of two clients retained the remaining draft and kept the update waiting. After saving and closing all clients naturally, the new build reopened offline with identical journal data.

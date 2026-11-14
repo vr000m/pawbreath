@@ -202,6 +202,31 @@ test('phone CSS: one max-width:600px block, so each phone property has a single 
   const phone = blocks.findIndex(({ prelude }) => phoneQuery.test(prelude));
   const after = blocks.slice(phone + 1).filter(({ prelude }) => !prelude.startsWith('@')).map(({ prelude }) => prelude);
   assert.deepEqual(after, [], 'base rules belong above the phone block');
+  // Media blocks after it must not apply to phones either, unless they only narrow it: capped at 600px or less
+  // (the height-gated short-phone blocks), the wide-screen complement, or above 600px only. A wider breakpoint
+  // such as max-width:800px also matches a phone and would override a phone value by source order, so it
+  // belongs above. A width-agnostic block (display-mode, motion) may follow only if it styles nothing the phone
+  // block styles.
+  const phoneSelectors = new Set(rules(atBlocks(css, phoneQuery)[0]).flatMap(({ selectors }) => selectors));
+  const skipsPhones = query => {
+    const q = query.toLowerCase().replace(/\s+/g, '');
+    if (q === 'notalland(max-width:600px)') return true;
+    if (q.startsWith('not')) return false;
+    const conjuncts = q.replace(/^(?:only)?(?:screen|all)and/, '').split('and');
+    return conjuncts.some(part => {
+      const max = part.match(/^\(max-width:(\d*\.?\d+)px\)$/), min = part.match(/^\(min-width:(\d*\.?\d+)px\)$/);
+      return max ? Number(max[1]) <= 600 : min ? Number(min[1]) > 600 : false;
+    });
+  };
+  const overriding = [];
+  for (const { prelude } of blocks.slice(phone + 1).filter(({ prelude }) => /^@media\b/i.test(prelude))) {
+    const queries = prelude.replace(/^@media/i, '').split(',');
+    if (queries.every(skipsPhones)) continue;
+    if (queries.some(query => /max-width\s*:\s*(\d*\.?\d+)px/i.test(query) && !skipsPhones(query))) { overriding.push(prelude); continue; }
+    const [body] = atBlocks(css, { test: candidate => candidate.trim() === prelude });
+    if (rules(body).some(({ selectors }) => selectors.some(part => phoneSelectors.has(part)))) overriding.push(prelude);
+  }
+  assert.deepEqual(overriding, [], 'a media block that matches phones belongs above the phone block');
 });
 
 test('the wide-screen picker block is the exact complement of the phone block, so no viewport width gets neither', () => {
