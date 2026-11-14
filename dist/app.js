@@ -94,12 +94,14 @@ async function refreshAfterWrite() {
 }
 
 function renderProfiles() {
-  const select = $('#selected-dog');
-  select.replaceChildren();
-  if (!snapshot.dogs.length) select.add(new Option('Add your first dog', ''));
-  for (const item of snapshot.dogs) select.add(new Option(item.name, item.id));
-  select.value = selectedId;
-  select.disabled = !snapshot.dogs.length || !!session || !!pending;
+  // The Measure and History pages share one selection, so both pickers show the same dog.
+  for (const select of $$('#selected-dog, #history-dog-select')) {
+    select.replaceChildren();
+    if (!snapshot.dogs.length) select.add(new Option('Add your first dog', ''));
+    for (const item of snapshot.dogs) select.add(new Option(item.name, item.id));
+    select.value = selectedId;
+    select.disabled = !snapshot.dogs.length || !!session || !!pending;
+  }
   const current = dog();
   $('#dog-name').textContent = current?.name ?? 'Every breath matters.';
   $('#dog-caption').textContent = current
@@ -260,7 +262,7 @@ function drawChart() {
 }
 
 function setLocked(locked) {
-  $('#selected-dog').disabled = locked || !snapshot.dogs.length;
+  for (const select of $$('#selected-dog, #history-dog-select')) select.disabled = locked || !snapshot.dogs.length;
   for (const element of $$('[data-page], [data-duration], #add-dog, #edit-dog')) element.disabled = locked;
   for (const element of $$('#manual-entry, #history-manual-entry')) element.disabled = locked || !dog() || !db;
 }
@@ -504,7 +506,9 @@ function showPage(next) {
 }
 $$('[data-page]').forEach(button => { button.onclick = () => showPage(button.dataset.page); });
 $('.brand').onclick = event => { event.preventDefault(); showPage('measure'); };
-$('#selected-dog').onchange = () => { selectedId = $('#selected-dog').value; renderProfiles(); renderLatest(); resetCounter(); };
+for (const select of $$('#selected-dog, #history-dog-select')) {
+  select.onchange = () => { selectedId = select.value; renderProfiles(); renderLatest(); renderHistory(); resetCounter(); };
+}
 function setRange(value) {
   range = value;
   $$('[data-range]').forEach(item => item.setAttribute('aria-pressed', String(item.dataset.range === value)));

@@ -46,6 +46,24 @@ await check('Add profile through the form and persist it', async () => {
   record.dogId = saved.id;
   assert(!$('#dog-name').querySelector('img'), 'Name rendered as markup');
 });
+await check('History has its own dog picker that shares the selection with Measure', async () => {
+  const original = selectedId;
+  snapshot.dogs.push({ id: 'picker-dog', name: 'Zed', threshold: null, photo: '' });
+  try {
+    renderProfiles();
+    const picker = $('#history-dog-select');
+    assert([...picker.options].map(option => option.value).join() === snapshot.dogs.map(item => item.id).join(), 'History picker lists different dogs');
+    picker.value = 'picker-dog';
+    picker.onchange();
+    assert(selectedId === 'picker-dog' && $('#selected-dog').value === 'picker-dog', 'Pickers disagree after a History change');
+    assert($('#history-dog').textContent.includes('Zed') && $('#reading-total').textContent.startsWith('0 '), 'History did not switch dog');
+    $('#selected-dog').value = original;
+    $('#selected-dog').onchange();
+    assert(picker.value === original, 'Measure change not reflected in History picker');
+  } finally {
+    snapshot.dogs.pop(); selectedId = original; renderProfiles(); renderHistory();
+  }
+});
 let fakeNow = 0;
 Object.defineProperty(performance, 'now', {configurable:true, value:()=>fakeNow});
 await check('30-second count, undo, deadline, save and persisted result', async () => {
