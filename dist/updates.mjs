@@ -122,10 +122,11 @@ export function createUpdateMonitor({
   let hadController = !!serviceWorker?.controller;
   let claimedWhileUnknown = false;
   serviceWorker?.addEventListener('controllerchange', () => {
-    // First installation claims the current page too; that alone is not an update. If the published
-    // release is not known yet, remember the claim so check() can apply the same rule once it is.
+    // First installation claims the current page too; that alone is not an update. Judge the claim against
+    // published metadata only when it is current: with none yet, or a check in flight whose fetch may
+    // return a newer release than `latest`, remember the claim so check() applies the same rule to it.
     if (hadController) activationChanged = true;
-    else if (!latest) claimedWhileUnknown = true;
+    else if (!latest || checking) claimedWhileUnknown = true;
     else if (!sameRelease(latest, RELEASE)) activationChanged = true;
     hadController = true;
     emit();
