@@ -1,6 +1,6 @@
 import { openDatabase, readAll, saveDog, saveReading, deleteReading, restoreBackup,
   readBackupFile, makeBackup, toCsv, respiratoryRate, manualDate, manualDialogAction,
-  CONTEXTS, CONTEXT_LABELS, withReadingDefaults } from './data.mjs';
+  CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId } from './data.mjs';
 import { createUpdateMonitor } from './updates.mjs';
 
 const $ = selector => document.querySelector(selector);
@@ -49,6 +49,13 @@ for (const value of [...CONTEXTS.filter(item => item !== 'not-recorded'), 'not-r
 }
 
 function dog() { return snapshot.dogs.find(item => item.id === selectedId); }
+const DOG_KEY = 'pawbreath.dog';
+function rememberedDog() { try { return localStorage.getItem(DOG_KEY) ?? ''; } catch { return ''; } }
+// An explicit choice is remembered for the next launch; the automatic default is not.
+function chooseDog(id) {
+  selectedId = id;
+  try { localStorage.setItem(DOG_KEY, id); } catch { /* Optional convenience only. */ }
+}
 function readingDetails(reading) {
   const entry = withReadingDefaults(reading);
   const context = CONTEXT_LABELS[entry.context]?.short ?? CONTEXT_LABELS['not-recorded'].short;
@@ -76,7 +83,7 @@ function confirmAction(title, message, label = 'Continue') {
 async function refresh() {
   snapshot = await readAll(db);
   snapshot.dogs.sort((a, b) => a.name.localeCompare(b.name));
-  if (!dog()) selectedId = snapshot.dogs[0]?.id ?? '';
+  if (!dog()) selectedId = defaultDogId(snapshot.dogs, snapshot.readings, rememberedDog());
   renderProfiles();
   renderHistory();
   renderLatest();
@@ -507,7 +514,7 @@ function showPage(next) {
 $$('[data-page]').forEach(button => { button.onclick = () => showPage(button.dataset.page); });
 $('.brand').onclick = event => { event.preventDefault(); showPage('measure'); };
 for (const select of $$('#selected-dog, #history-dog-select')) {
-  select.onchange = () => { selectedId = select.value; renderProfiles(); renderLatest(); renderHistory(); resetCounter(); };
+  select.onchange = () => { chooseDog(select.value); renderProfiles(); renderLatest(); renderHistory(); resetCounter(); };
 }
 function setRange(value) {
   range = value;
@@ -595,7 +602,8 @@ $('#dog-form').onsubmit = async event => {
     threshold: value ? Number(value) : null, photo };
   try {
     await saveDog(db, entry);
-    selectedId = entry.id;
+    // Adding a dog is a choice worth remembering; editing one from Settings only follows it for this session.
+    if (editId) selectedId = entry.id; else chooseDog(entry.id);
     $('#dog-dialog').close();
     await refreshAfterWrite();
     notifyChange();

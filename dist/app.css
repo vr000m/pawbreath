@@ -95,6 +95,7 @@ label {
   margin-bottom:9px;
 }
 
+/* 16px: iOS Safari zooms the page when a smaller form control is focused. */
 select {
   font-size:16px;
 }
@@ -176,10 +177,6 @@ nav button {
   font-size:14px;
 }
 
-nav button span {
-  margin-right:6px;
-}
-
 nav button[aria-current=page] {
   background:#e6eddf;
   color:var(--green);
@@ -238,26 +235,27 @@ h1 {
   margin-bottom:0;
 }
 
+/* One picker shape everywhere: the label spans the row, the select and "+ Add a dog" share the line below.
+   Media queries set only the column widths and spacing. */
 .dog-picker {
-  min-width:218px;
-  max-width:290px;
-  padding-top:26px;
+  display:grid;
 }
 
 .dog-picker select {
   width:100%;
-  background:transparent;
-  font-size:15px;
+  background:#fff;
 }
 
 .dog-picker label {
-  font-size:11px;
+  grid-column:1/-1;
+  font-size:12px;
   color:var(--muted);
   font-weight:500;
 }
 
 .dog-picker .text-button {
-  padding-left:0;
+  align-self:center;
+  padding-left:6px;
   font-size:12px;
 }
 
@@ -610,10 +608,12 @@ h1 {
   padding:45px 0;
 }
 
+/* "Enter a reading" lives with the list it adds to, not above the chart. */
 .section-heading {
   display:flex;
   justify-content:space-between;
   align-items:center;
+  gap:16px;
   margin:30px 0 15px;
 }
 
@@ -623,6 +623,17 @@ h1 {
 
 .section-heading span {
   font-size:12px;
+}
+
+.section-title span {
+  display:block;
+  margin-top:3px;
+}
+
+.section-heading .secondary {
+  flex:none;
+  padding:10px 16px;
+  font-size:14px;
 }
 
 .reading-row {
@@ -714,7 +725,7 @@ h1 {
 
 footer {
   font-family:Georgia,serif;
-  color:#819078;
+  color:var(--muted);
   font-style:italic;
   font-size:13px;
   text-align:center;
@@ -870,7 +881,91 @@ dialog label {
   }
 }
 
+@media(prefers-reduced-motion:reduce) {
+  * {
+    transition:none!important;
+    scroll-behavior:auto!important;
+  }
+}
+
+/* Reading context and manual entry use the same accessible form controls. */
+#reading-context, #manual-context { width:100%; margin-bottom:12px; }
+.checkbox-label { display:flex; align-items:center; gap:10px; margin:12px 0 18px; min-height:44px; text-align:left; }
+.checkbox-label input { width:20px; height:20px; flex:0 0 20px; }
+#manual-fields { border:0; padding:0; margin:0; min-width:0; }
+#manual-fields>input, #manual-fields>textarea { margin-bottom:16px; }
+#manual-timezone { overflow-wrap:anywhere; }
+#manual-entry { display:block; margin:0 auto; }
+.update-notice { padding:16px; border:1px solid currentColor; border-radius:12px; margin-bottom:24px; }
+#app-version, #published-version { overflow-wrap:anywhere; }
+.breathing-guide { border:1px solid #dce3d6; border-radius:16px; padding:18px; background:#fffefa; }
+.breathing-guide summary { cursor:pointer; font-weight:600; min-height:44px; display:list-item; align-content:center; }
+.breathing-guide p { font-size:14px; line-height:1.6; margin:14px 0 0; }
+.breathing-guide a { color:inherit; text-decoration:underline; text-underline-offset:3px; }
+.history-context-filter { margin:16px 0; }
+.history-context-filter select { width:100%; max-width:380px; }
+.history-context-filter p { max-width:65ch; }
+
+/* Tab icons are inline SVG so they look the same on iOS and Android. */
+nav button svg {
+  width:20px;
+  height:20px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.7;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  vertical-align:-4px;
+  margin-right:6px;
+  flex:none;
+}
+
+nav button svg .knob {
+  fill:#fbfcf7;
+}
+
+nav button[aria-current=page] svg .knob {
+  fill:#e6eddf;
+}
+
+/* History: dog and period share one row above the chart. */
+.history-toolbar {
+  display:flex;
+  align-items:flex-end;
+  margin-bottom:18px;
+}
+
+.history-toolbar .history-dog-picker {
+  margin:0;
+  min-width:0;
+}
+
+.history-toolbar .segments {
+  flex:none;
+}
+
+#history-context {
+  margin-bottom:0;
+}
+
+.chart-card .history-context-filter {
+  margin:20px 0 0;
+}
+
+.actions #csv-export {
+  white-space:nowrap;
+}
+
+/* Phone layout. This is the only plain max-width:600px block, so each phone property has a single value here;
+   the short-phone block further down adds height-gated overrides on top.
+   Measure and History lead with the task: compact titles, Start counting in the thumb zone. */
 @media(max-width:600px) {
+  :root {
+    /* Shared by the fixed tab bar and the sticky counter controls that sit on top of it. */
+    --nav-h:68px;
+    /* Shared by the dialog and the manual form's sticky Save/Cancel bar that bleeds to its edges. */
+    --dialog-pad:23px;
+  }
   .topbar {
     height:72px;
     padding:0 22px;
@@ -891,7 +986,7 @@ dialog label {
     bottom:0;
     left:0;
     right:0;
-    height:calc(68px + env(safe-area-inset-bottom));
+    height:calc(var(--nav-h) + env(safe-area-inset-bottom));
     padding:7px 15px calc(7px + env(safe-area-inset-bottom));
     background:#fbfcf7f5;
     border-top:1px solid var(--line);
@@ -906,14 +1001,15 @@ dialog label {
     padding:6px;
     font-size:11px;
   }
-  nav button span {
+  nav button svg {
     display:block;
-    font-size:19px;
-    margin:0 0 2px;
+    width:23px;
+    height:23px;
+    margin:0 auto 3px;
   }
   main {
     margin:0 20px;
-    padding-top:30px;
+    padding-top:16px;
     padding-bottom:85px;
   }
   .page-heading {
@@ -934,26 +1030,50 @@ dialog label {
     font-size:13px;
     max-width:290px;
   }
+  /* The picker right below names the dog, so History does not need its own subtitle on a phone. */
+  #measure-page .eyebrow, #measure-page .subtitle, #history-page .eyebrow, #history-page .subtitle {
+    display:none;
+  }
+  #measure-page .page-heading, #history-page .page-heading {
+    margin-bottom:14px;
+  }
+  #measure-page h1, #history-page h1 {
+    font-size:29px;
+    letter-spacing:-1px;
+    margin-bottom:0;
+  }
+  /* Mid-count the title is dead weight; give the tap target the room (the dog picker stays). The update
+     notice is held back the same way: shown mid-count it would push the circle under the pinned Undo/Cancel
+     bar. Visually hidden, not display:none, so screen readers keep the heading and still hear the notice,
+     and both come back when the count ends. */
+  #measure-page:has(.breath-circle.active) h1,
+  main:has(.breath-circle.active) #update-notice {
+    position:absolute;
+    width:1px;
+    height:1px;
+    margin:-1px;
+    padding:0;
+    border:0;
+    overflow:hidden;
+    clip-path:inset(50%);
+    white-space:nowrap;
+  }
+  /* A dog name can be 60 characters. minmax(0,…) and min-width:0 let the select shrink and truncate it
+     instead of pushing past "+ Add a dog" or the History period buttons; a plain 1fr track would not go
+     below the select's min-content width in engines that size it from the longest option. */
   .dog-picker {
-    display:grid;
-    grid-template-columns:1fr auto;
+    grid-template-columns:minmax(0,1fr) auto;
     gap:0 12px;
-    max-width:none;
     width:100%;
-    padding-top:25px;
-  }
-  .dog-picker label {
-    grid-column:1/-1;
-    font-size:10px;
-    margin-bottom:7px;
-  }
-  .dog-picker .text-button {
-    align-self:center;
-    padding-left:6px;
   }
   .dog-picker select {
-    padding:10px 13px;
-    font-size:14px;
+    min-width:0;
+  }
+  .dog-picker label {
+    margin-bottom:7px;
+  }
+  #measure-page .dog-picker {
+    padding-top:12px;
   }
   .measure-grid {
     grid-template-columns:1fr;
@@ -978,13 +1098,26 @@ dialog label {
     font-size:12px;
   }
   .breath-circle {
-    width:225px;
-    height:225px;
-    margin-top:23px;
-    margin-bottom:15px;
+    /* dvh, not vh: on a phone vh counts the area behind the browser toolbars, so the circle would crowd the sticky Start button. */
+    width:clamp(150px,27dvh,225px);
+    height:clamp(150px,27dvh,225px);
+    margin-top:12px;
+    margin-bottom:6px;
   }
   .counter-controls {
-    margin-top:20px;
+    position:sticky;
+    bottom:calc(var(--nav-h) + 8px + env(safe-area-inset-bottom));
+    z-index:2;
+    margin-top:12px;
+    padding:14px 0 6px;
+    background:linear-gradient(to bottom,#fffefa00,#fffefa 28%);
+    pointer-events:none;
+  }
+  .counter-controls>* {
+    pointer-events:auto;
+  }
+  .text-button {
+    min-height:44px;
   }
   .side-column {
     gap:16px;
@@ -1000,6 +1133,16 @@ dialog label {
   }
   .page-heading>.secondary {
     margin-top:20px;
+  }
+  .history-toolbar {
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    align-items:end;
+    gap:0 10px;
+    margin-top:12px;
+  }
+  .history-toolbar .dog-picker label {
+    margin-bottom:5px;
   }
   .chart-card {
     padding:20px 16px;
@@ -1036,40 +1179,81 @@ dialog label {
     font-size:12px;
   }
   dialog {
-    padding:23px;
+    padding:var(--dialog-pad);
   }
   #confirm-message {
     font-size:14px;
   }
-}
-
-@media(prefers-reduced-motion:reduce) {
-  * {
-    transition:none!important;
-    scroll-behavior:auto!important;
+  /* The manual form is taller than a phone: keep Save and Cancel reachable. */
+  #manual-form .actions {
+    position:sticky;
+    bottom:calc(-1 * var(--dialog-pad));
+    margin:12px calc(-1 * var(--dialog-pad)) calc(-1 * var(--dialog-pad));
+    padding:12px var(--dialog-pad) calc(14px + env(safe-area-inset-bottom));
+    background:#fffefa;
+    border-top:1px solid var(--line);
   }
 }
 
-/* Reading context and manual entry use the same accessible form controls. */
-#reading-context, #manual-context { width:100%; margin-bottom:12px; }
-.checkbox-label { display:flex; align-items:center; gap:10px; margin:12px 0 18px; min-height:44px; text-align:left; }
-.checkbox-label input { width:20px; height:20px; flex:0 0 20px; }
-#manual-fields { border:0; padding:0; margin:0; min-width:0; }
-#manual-fields>input, #manual-fields>textarea { margin-bottom:16px; }
-#manual-timezone { overflow-wrap:anywhere; }
-#manual-entry { display:block; margin:0 auto; }
-.update-notice { padding:16px; border:1px solid currentColor; border-radius:12px; margin-bottom:24px; }
-#app-version, #published-version { overflow-wrap:anywhere; }
-.breathing-guide { border:1px solid #dce3d6; border-radius:16px; padding:18px; background:#fffefa; }
-.breathing-guide summary { cursor:pointer; font-weight:600; min-height:44px; display:list-item; align-content:center; }
-.breathing-guide p { font-size:14px; line-height:1.6; margin:14px 0 0; }
-.breathing-guide a { color:inherit; text-decoration:underline; text-underline-offset:3px; }
-.history-context-filter { margin:16px 0; }
-.history-context-filter select { width:100%; max-width:380px; }
-.history-context-filter p { max-width:65ch; }
+/* Once installed, the install instructions are noise. The offline status in the same card is not. */
+@media(display-mode:standalone) {
+  .install-steps {
+    display:none;
+  }
+}
 
-.history-dog-picker {
-  padding-top:0;
-  margin:-14px 0 22px;
-  max-width:290px;
+/* Short phones (666px of visible height or less, which covers the common 360x640-660 Android sizes):
+   mid-count, drop the duration picker and the instruction line so the whole circle clears the pinned
+   Undo/Cancel bar. With them shown, the circle reaches the solid Undo button up to 663px tall (16.6px at 641);
+   666 adds a little headroom. At 667 (iPhone SE 2nd gen, 8) and up to 682 the circle only dips into the bar's
+   transparent top fade, which ignores taps, so those phones keep the picker. */
+@media(max-width:600px) and (max-height:666px) {
+  #measure-page:has(.breath-circle.active) .counter-card .card-top,
+  #measure-page:has(.breath-circle.active) #counter-instruction {
+    display:none;
+  }
+}
+
+/* Very short phones (an iPhone SE 1st gen in Safari is about 320x480): even without the picker and
+   instruction, the chrome above the circle, its 150px minimum and the pinned bar need about 557px, so the bar
+   would cover the circle and catch breath taps. Mid-count, also drop the dog picker (disabled while counting;
+   the dog was chosen before Start) and the empty heading's margin. The circle keeps its size: it already
+   holds the count at its minimum. */
+@media(max-width:600px) and (max-height:560px) {
+  #measure-page:has(.breath-circle.active) .dog-picker {
+    display:none;
+  }
+  #measure-page:has(.breath-circle.active) .page-heading {
+    margin-bottom:0;
+  }
+}
+
+/* Wide screens: the dog picker sits in the same place on Measure and History, left-aligned under the
+   heading as on a phone, with the History period toggle beside it. */
+@media not all and (max-width:600px) {
+  #measure-page .page-heading {
+    display:block;
+  }
+  #measure-page .dog-picker {
+    grid-template-columns:260px max-content;
+    justify-content:start;
+    align-items:end;
+    gap:0 14px;
+    min-width:0;
+    margin-top:26px;
+  }
+  #measure-page .dog-picker label {
+    margin-bottom:6px;
+  }
+  .history-toolbar {
+    justify-content:flex-start;
+    gap:14px 20px;
+  }
+  .history-toolbar .history-dog-picker {
+    flex:0 0 260px;
+    max-width:260px;
+  }
+  .history-toolbar .dog-picker label {
+    margin-bottom:6px;
+  }
 }

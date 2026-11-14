@@ -4,7 +4,7 @@ A mobile-first breathing journal for dogs: timed 30/60-second counts, multiple p
 
 ![Pawbreath measurement screen with a sample Milo profile and latest reading](docs/images/pawbreath-preview.png)
 
-Local preview with sample data. See the [changelog](CHANGELOG.md) for changes and the [development plan](docs/dev_plans/20261112-feature-pawbreath.md) for decisions and verification. The branch's 1.1.0 changes are not yet deployed; physical iPhone acceptance remains pending.
+Local preview with sample data. See the [changelog](CHANGELOG.md) for changes and the [development plan](docs/dev_plans/20261112-feature-pawbreath.md) for decisions and verification. Unreleased changes (see the changelog) are not yet deployed; physical iPhone acceptance remains pending.
 
 ## Install and use
 
@@ -18,7 +18,7 @@ The cached breathing guidance explains measurement context and when to seek vete
 
 ## Storage and backups
 
-Data stays in IndexedDB on this device/browser and hostname. Clearing browser data or losing the device can lose the journal. Download JSON backups from Settings regularly; CSV exports include all dogs and readings with UTC timestamps, regardless of History filters.
+Data stays in IndexedDB on this device/browser and hostname. The last-chosen dog is remembered per browser; readings stay in IndexedDB only. Clearing browser data or losing the device can lose the journal. Download JSON backups from Settings regularly. Export CSV sits beside them in Settings; CSV exports include all dogs and readings with UTC timestamps, regardless of History filters.
 
 Restore validates the complete backup and adds missing records in one transaction, preserving existing records with matching IDs. A previous backup can recover deleted readings. Export and restore share validation rules and have no fixed aggregate size/count limit; browser resources still limit capacity.
 
@@ -28,7 +28,7 @@ New backups use format 2 and accept version 1 imports. Older app versions cannot
 
 Settings shows running/published versions, the last successful check and **Check for updates**. Checks also run on launch, reconnection and resumption. **Offline ready** means the app is cached, not necessarily current.
 
-When **Update ready** appears, save your work, fully close the installed app and all Pawbreath browser tabs, then reopen. Downloaded updates can activate offline and retain the journal. They never force a reload during a count or form edit. Unsaved work does not survive intentionally closing the app. Older releases gain the version panel only after completing this upgrade cycle.
+When **Update ready** appears (on a phone it stays visually hidden until a running count ends; screen readers still announce it), save your work, fully close the installed app and all Pawbreath browser tabs, then reopen. Downloaded updates can activate offline and retain the journal. They never force a reload during a count or form edit. Unsaved work does not survive intentionally closing the app. Older releases gain the version panel only after completing this upgrade cycle.
 
 ## Develop and verify
 

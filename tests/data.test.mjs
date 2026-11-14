@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { validateDog, validateReading, validateBackup, makeBackup, readBackupFile, toCsv, respiratoryRate, manualDate,
-  CONTEXTS, CONTEXT_LABELS, withReadingDefaults } from '../dist/data.mjs';
+  CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId } from '../dist/data.mjs';
 
 const dog = { id: 'dog-1', name: 'Milo', threshold: null, photo: '' };
 const reading = { id: 'reading-1', dogId: dog.id, date: '2026-11-12T21:00:00.000Z', count: 12, seconds: 30, rate: 24, notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
@@ -199,4 +199,19 @@ test('legacy reading defaults fill only absent fields and leave present values f
   assert.deepEqual(withReadingDefaults(manual), manual);
   assert.equal(withReadingDefaults({ ...legacy, context: null }).context, null);
   assert.equal(validateReading(legacy).context, 'not-recorded');
+});
+
+test('the app opens on the remembered dog, else the dog with the newest reading, else the first by name', () => {
+  const gerald = { ...dog, id: 'gerald', name: 'Gerald' };
+  const hugo = { ...dog, id: 'hugo', name: 'Hugo' };
+  const dogs = [gerald, hugo];
+  const at = (dogId, date) => ({ ...reading, id: `${dogId}-${date}`, dogId, date });
+  const readings = [at('hugo', '2026-11-13T07:44:04.895Z'), at('gerald', '2026-10-01T07:44:04.895Z')];
+  assert.equal(defaultDogId(dogs, readings), 'hugo', 'newest reading wins over name order');
+  assert.equal(defaultDogId(dogs, readings, 'gerald'), 'gerald', 'an explicit earlier choice wins');
+  assert.equal(defaultDogId(dogs, readings, 'deleted-dog'), 'hugo', 'a remembered dog that no longer exists is ignored');
+  assert.equal(defaultDogId(dogs, []), 'gerald', 'no readings falls back to the first dog');
+  assert.equal(defaultDogId(dogs, [at('ghost', '2027-01-01T00:00:00.000Z')]), 'gerald', 'readings of unknown dogs are ignored');
+  assert.equal(defaultDogId(dogs, [{ ...reading, dogId: 'hugo', date: undefined }]), 'gerald', 'a reading without a date is ignored');
+  assert.equal(defaultDogId([], readings, 'hugo'), '', 'no dogs gives no selection');
 });
