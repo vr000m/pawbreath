@@ -168,9 +168,13 @@ Physical checks remain pending on both iPhone 12 and iPhone 17 Pro Max: Safari a
 
 ## Release verification — 14 November 2026
 
-The owner deployed 1.2.0 build `aa881e199dc7` to `https://pawbreath.com/`. Independent production verification matched release metadata, the service worker and all 12 precached assets byte-for-byte with the checkout. The last source-changing commit is `aea185a`; later gauntlet commits change tests and documentation.
+The owner deployed 1.2.0 build `aa881e199dc7` to `https://pawbreath.com/`. Independent production verification matched release metadata, the service worker and all 12 precached assets byte-for-byte with the checkout. At deployment the last source-changing commit was `aea185a`; later gauntlet commits changed tests and documentation. Commit `ca8e0ca` then changed `dist/app.css` (build `5b275c3512c3`, see the follow-up below), so the branch no longer matches the deployed build until it is redeployed.
 
 - Production Chromium profiles at 390×844 and 440×956 passed real 30-second touch counts, Undo, saved timing, full-duration newest-first replay, silent playback, stable layout, Stop focus, context filtering and form cancellation. JSON downloads retained exact offsets. Fresh worker installation and offline reload preserved the journal, guidance and replay. No page runtime errors occurred. Tests used isolated synthetic journals.
 - HTTP apex, HTTP www and HTTPS www returned 301 redirects to HTTPS apex, preserving the query string. `npm test` passed 107 tests, and the exact-source browser harness passed 30 checks.
 - These are Chromium emulations, not physical iPhone or installed-app upgrade acceptance. The physical checks listed above remain pending on both devices.
 - Gauntlet closure remains by owner choice after round 8; its ledger is non-terminal. Deployment does not convert that into formal convergence. PR #5 precedes PR #6 because #6 contains #5's commits; use regular merge commits and verify the final main tree against this deployed build.
+
+### 2026-11-14 follow-up from `/code-review xhigh --fix` on PR #5
+
+The PR #5 review (run on `fix/iphone-counting-layout`) found ten issues. This branch already carried the fixes for the audio release on untick, `stopTapSound` only when a count was open, `autocomplete="off"` and the `tap-sound.mjs` table row. Two were still missing and `ca8e0ca` applies them: the counting card keeps its bottom padding on short screens (`min-height` only, no `height:100%`), and an emptied update notice stays invisible while it is re-announced (`.update-notice:empty`). Both are asserted in `tests/structure.test.mjs`. Build `5b275c3512c3` is not deployed. Not changed, for the owner: a late-tap guard when the count ends, the 'keep this screen open' hint replaced by the sound status, the status shown before audio is confirmed, and no timeout on `detect()`. 107 tests and 30 harness checks pass.

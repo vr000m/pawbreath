@@ -16,6 +16,7 @@ Deployed build `aa881e199dc7`.
 
 ### Fixed
 
+- The counting card keeps its bottom padding on short screens, and an update notice no longer flashes an empty box when a count ends.
 - History no longer jumps when a replay starts, advances or ends: the replaying reading is highlighted without reflowing its text, and the replay detail keeps its space.
 - Active Undo/Cancel controls stay below the counting target, including with bottom safe-area insets. Short screens can scroll outside the target without controls intercepting breath taps; idle Start stays pinned.
 - The breath button shows a stable “Count one breath” label matching its accessible name, with the count exposed separately.
