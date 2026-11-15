@@ -2,11 +2,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { validateDog, validateReading, validateBackup, makeBackup, readBackupFile, toCsv, respiratoryRate, manualDate,
-  CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId } from '../dist/data.mjs';
+  CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId, newestFirst } from '../dist/data.mjs';
 
 const dog = { id: 'dog-1', name: 'Milo', threshold: null, photo: '' };
 const reading = { id: 'reading-1', dogId: dog.id, date: '2026-11-12T21:00:00.000Z', count: 12, seconds: 30, rate: 24, notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
 const backup = () => ({ format: 'pawbreath', version: 3, dogs: [{ ...dog }], readings: [{ ...reading }] });
+
+// Contract: newestFirst is the one reading order, used by both the History list and the replay queue.
+test('newestFirst orders by date descending, then id by code unit, never by locale, across the whole space', () => {
+  const at = (id, date) => ({ ...reading, id, date });
+  const same = '2026-11-14T12:00:00.000Z', older = '2026-11-13T12:00:00.000Z', newer = '2026-11-15T12:00:00.000Z';
+  // Equal date and equal id: neither comes first.
+  assert.equal(newestFirst(at('x', same), at('x', same)), 0);
+  // Equal date, different ids: code-unit order, antisymmetric.
+  assert.ok(newestFirst(at('a', same), at('b', same)) < 0 && newestFirst(at('b', same), at('a', same)) > 0);
+  // Different dates: the newer comes first whatever the ids, including an equal id.
+  for (const [first, second] of [['z', 'a'], ['a', 'z'], ['x', 'x']]) {
+    assert.ok(newestFirst(at(first, newer), at(second, older)) < 0, `${first}/${second}`);
+    assert.ok(newestFirst(at(second, older), at(first, newer)) > 0, `${first}/${second}`);
+  }
+  const items = [at('b', same), at('old', older), at('a', same), at('B', same), at('\u00e9', same), at('new', newer)];
+  // 'B' (U+0042) < 'a' < 'b' < 'e-acute' (U+00E9) by code unit; localeCompare would put 'a' before 'B'.
+  assert.deepEqual(items.sort(newestFirst).map(r => r.id), ['new', 'B', 'a', 'b', '\u00e9', 'old']);
+});
 
 test('rate calculation retains raw count and handles both supported durations', () => {
   assert.equal(respiratoryRate(12, 30), 24);

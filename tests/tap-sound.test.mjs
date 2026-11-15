@@ -183,3 +183,17 @@ test('stop() during a pending detect() or tone onended keeps state consistent', 
   const [node] = g.tones; node.onended(); g.sound.stop(); node.onended?.();
   assert.equal(g.sounding(), 0); assert.doesNotThrow(() => g.sound.stop());
 });
+
+test('stop() ends every tone still playing and a late onended afterwards is harmless', () => {
+  const f = graph(); f.sound.prepare(true);
+  for (let i = 0; i < 3; i++) { assert.equal(f.sound.play(), true); f.context.currentTime += 0.01; }
+  assert.equal(f.sounding(), 3);
+  f.sound.stop();
+  assert.equal(f.sounding(), 0, 'a tone survived stop()');
+  assert.ok(f.tones.every(node => node.stopAt <= f.context.currentTime && !node.connected), 'a tone was not stopped and disconnected');
+  const old = [...f.tones];
+  f.sound.prepare(true); assert.equal(f.sound.play(), true);
+  assert.doesNotThrow(() => old.forEach(node => node.onended()), 'a late onended threw');
+  assert.equal(f.sounding(), 1, 'a late onended disturbed the next tone');
+  f.sound.stop(); assert.equal(f.sounding(), 0, 'stop() missed a tone after late onended calls');
+});

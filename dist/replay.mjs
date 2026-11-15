@@ -1,9 +1,4 @@
-import { validateReading } from './data.mjs';
-
-// The one reading order: newest first, then id by UTF-16 code unit (not locale), so ties never depend on the device.
-export function newestFirst(a, b) {
-  return b.date.localeCompare(a.date) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
-}
+import { newestFirst, validateReading } from './data.mjs';
 
 // Immutable copies: callers, storage refreshes and frame consumers cannot change a running queue.
 export function replayableReadings(entries) {

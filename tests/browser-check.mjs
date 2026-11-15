@@ -22,9 +22,9 @@ app = replaced(app, 'const updates = createUpdateMonitor({ storage: updateStorag
 app = replaced(app, '  prepareOffline();', "  $('#cache-status').textContent = 'Offline installation is excluded from the file-based test harness.';");
 app = replaced(app, "import { createTapSound } from './tap-sound.mjs';\n", '');
 const tapSoundSource = replaced(readFileSync(new URL('tap-sound.mjs', dist), 'utf8'), 'export ', '', true);
-app = replaced(app, "import { createReplayController, newestFirst, replayableReadings } from './replay.mjs';\n", '');
+app = replaced(app, "import { createReplayController, replayableReadings } from './replay.mjs';\n", '');
 const replaySource = replaced(replaced(readFileSync(new URL('replay.mjs', dist), 'utf8'),
-  "import { validateReading } from './data.mjs';\n", ''), 'export ', '', true);
+  "import { newestFirst, validateReading } from './data.mjs';\n", ''), 'export ', '', true);
 const checks = `
 const output = document.createElement('pre');
 output.id = 'test-results';
@@ -572,6 +572,30 @@ await check('History replays individual points and visible readings newest first
     tapSound.play = playSound; stopReplay(); selectedId=originalDog; fakeNow=originalNow;
     await deleteReading(db,'replay-bad');
     setRange('all'); setHistoryContext('all'); await refresh(); showPage('measure');
+  }
+});
+// Contract: one ordering defines both the History list and the replay queue, including same-date ties.
+await check('History list order equals replay queue order for same-date readings', async () => {
+  const originalDog = selectedId, originalNow = fakeNow, originalReadings = snapshot.readings;
+  const orderDog = {id:'order-dog',name:'Order check',threshold:null,photo:''};
+  const at = (id, date) => ({...record,id,dogId:orderDog.id,date,count:3,rate:6,tapOffsetsMs:[1000,4500,12345],context:'asleep'});
+  const same = '2026-11-14T12:00:00.000Z';
+  // Stored order differs from the expected order; 'order-B' < 'order-a' by code unit but not by locale.
+  const fixtures = [at('order-old','2026-11-13T12:00:00.000Z'), at('order-a',same), at('order-b',same), at('order-B',same)];
+  snapshot.dogs.push(orderDog); snapshot.readings = [...originalReadings, ...fixtures];
+  try {
+    selectedId = orderDog.id; renderProfiles(); setRange('all'); setHistoryContext('all'); showPage('history');
+    const listOrder = [...document.querySelectorAll('.reading-row')].map(row => row.dataset.readingId);
+    const queueOrder = replayableReadings(fixtures).map(entry => entry.id);
+    $('#replay-all').click();
+    const played = [];
+    for (let i = 0; i < fixtures.length && replayState; i++) { played.push(replayState.entry.id); fakeNow += 30000; await sleep(30); }
+    assert(listOrder.join() === queueOrder.join(), 'History list ' + listOrder.join() + ' differs from replay queue ' + queueOrder.join());
+    assert(played.join() === listOrder.join(), 'Replay played ' + played.join() + ' but History lists ' + listOrder.join());
+    assert(listOrder.join() === 'order-B,order-a,order-b,order-old', 'Not newest first by code unit: ' + listOrder.join());
+  } finally {
+    stopReplay(); snapshot.readings = originalReadings; snapshot.dogs.pop(); selectedId = originalDog; fakeNow = originalNow;
+    renderProfiles(); setRange('all'); setHistoryContext('all'); renderHistory(); showPage('measure');
   }
 });
 await check('Concurrent connections preserve distinct records', async () => {

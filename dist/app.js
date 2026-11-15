@@ -1,9 +1,9 @@
 import { openDatabase, readAll, saveDog, saveReading, deleteReading, restoreBackup,
   readBackupFile, makeBackup, toCsv, respiratoryRate, manualDate, manualDialogAction,
-  CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId } from './data.mjs';
+  CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId, newestFirst } from './data.mjs';
 import { createUpdateMonitor } from './updates.mjs';
 import { createTapSound } from './tap-sound.mjs';
-import { createReplayController, newestFirst, replayableReadings } from './replay.mjs';
+import { createReplayController, replayableReadings } from './replay.mjs';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];

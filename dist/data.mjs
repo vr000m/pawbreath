@@ -20,6 +20,12 @@ export function withReadingDefaults(reading) {
     uncertain: reading.uncertain === undefined ? false : reading.uncertain };
 }
 
+// The one reading order, shared by the History list and the replay queue: newest first, then id by
+// UTF-16 code unit (not locale), so ties never depend on the device.
+export function newestFirst(a, b) {
+  return b.date.localeCompare(a.date) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+
 // Which dog to open: the one chosen last if it still exists, else the dog with the newest reading
 // (the one being tracked), else the first by name. Dogs are expected in display order.
 export function defaultDogId(dogs, readings, remembered = '') {

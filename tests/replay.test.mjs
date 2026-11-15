@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createReplayController, newestFirst, replayableReadings } from '../dist/replay.mjs';
+import { createReplayController, replayableReadings } from '../dist/replay.mjs';
 
 const entry = (id, date = '2026-11-14T12:00:00.000Z', seconds = 30) => ({ id, dogId: 'milo', date,
   seconds, count: 3, rate: seconds === 30 ? 6 : 3, notes: '', source: 'timed', context: 'asleep', uncertain: false,
@@ -25,15 +25,6 @@ test('eligible queue is newest first with deterministic ties, excluding old/manu
   const before = structuredClone(input);
   assert.deepEqual(replayableReadings(input).map(r => r.id), ['a', 'z', 'old']);
   assert.deepEqual(input, before);
-});
-
-test('newestFirst orders by date descending, then id by code unit, never by locale', () => {
-  const same = '2026-11-14T12:00:00.000Z';
-  const items = [entry('b', same), entry('old', '2026-11-13T12:00:00.000Z'), entry('a', same), entry('B', same),
-    entry('\u00e9', same), entry('new', '2026-11-15T12:00:00.000Z')];
-  // 'B' (U+0042) < 'a' < 'b' < 'e-acute' (U+00E9) by code unit; localeCompare would put 'a' before 'B'.
-  assert.deepEqual(items.sort(newestFirst).map(r => r.id), ['new', 'B', 'a', 'b', '\u00e9', 'old']);
-  assert.equal(newestFirst(entry('x', same), entry('x', same)), 0);
 });
 
 test('irregular taps preserve initial/trailing silence, exact boundaries and full 30/60-second clips', () => {
