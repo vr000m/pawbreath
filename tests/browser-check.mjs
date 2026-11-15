@@ -233,8 +233,11 @@ await check('Unticking tap sound suspends audio in every idle state without affe
 // Contract: the box is ticked exactly when a count will attempt sound, and a tick's detect() result counts only
 // while that tick is still the latest sound intent. A count ending suspends audio itself, so a detect() still
 // pending then must not read that suspend as "unavailable" and untick the box or overwrite the count's message.
+// A reset that ends no count (refresh() from another tab or visibilitychange, a duration button, the dog select)
+// supersedes nothing: a pending result still applies, and a settled one is left as it was (round 4).
 // State space: {ticked, unticked} x {detect settles idle, during the count, after cancel, after finish, after a
-// zero-tap finish} x {audio available, unavailable}. Every cell also checks taps count exactly once.
+// zero-tap finish, after an idle reset by refresh() / duration button / dog select, settled then idle reset by each}
+// x {audio available, unavailable}. Every cell also checks taps count exactly once.
 await check('A tap-sound check still pending when a count ends keeps the box and count message consistent', async () => {
   const original = {...tapSound};
   const box = $('#tap-sound');
@@ -269,6 +272,18 @@ await check('A tap-sound check still pending when a count ends keeps the box and
     'after a zero-tap finish': { run: async () => { fakeNow = 0; $('#start').click(); fakeNow = 30000; tick(); await settle(); },
       status: 'No breaths were counted. Please try again.', ended: true }
   };
+  const idleResets = {
+    'refresh()': async () => { await refresh(); },
+    'duration button': async () => { document.querySelector('[data-duration="30"]').click(); },
+    'dog select': async () => { $('#selected-dog').dispatchEvent(new Event('change')); }
+  };
+  for (const [name, reset] of Object.entries(idleResets)) {
+    phases['after an idle reset by ' + name] = { run: async () => {
+      assert(queued.length > 0 || !box.checked, 'detect was not pending before the reset');
+      await reset(); assert(!session && !pending, name + ' opened a count'); await settle(); } };
+    phases['settled, then an idle reset by ' + name] = { run: async () => { await settle(); await reset(); await settle(); },
+      status: 'Start the timer, then tap for each breath.' };
+  }
   try {
     for (const ticked of [true, false]) for (const [phase, spec] of Object.entries(phases)) for (const audio of [true, false]) {
       const cell = (ticked ? 'ticked' : 'unticked') + ', ' + phase + ', audio ' + (audio ? 'available' : 'unavailable');
@@ -593,7 +608,7 @@ await check('History replays individual points and visible readings newest first
       Object.defineProperty(reducedMotion,'matches',{configurable:true,value:true}); reducedMotion.dispatchEvent(new Event('change'));
       assert(radii.includes(7) && !radii.some(r=>r>7), 'Reduced motion still pulses');
     } finally { delete reducedMotion.matches; CanvasRenderingContext2D.prototype.arc = arc; }
-    $('#replay-stop').click(); assert(!historyChart.replay && $('#replay-stop').disabled, 'Stop left playback alive');
+    $('#replay-stop').click(); assert(!historyChart.replay && !replay.active && $('#replay-stop').disabled, 'Stop left playback alive');
     assert(layout() === idleLayout, 'Stopping replay moved layout: ' + idleLayout + ' -> ' + layout());
     assert($('#replay-detail').inert && $('#replay-detail').getAttribute('aria-hidden') === 'true' && getComputedStyle($('#replay-detail')).visibility === 'hidden', 'Inactive replay detail exposed');
     drawChart(); const point = historyChart.points.find(p=>p.entry.id==='replay-old');
@@ -601,7 +616,7 @@ await check('History replays individual points and visible readings newest first
     $('#history-chart').dispatchEvent(new MouseEvent('click',{clientX:rect.left+point.x,clientY:rect.top+point.y}));
     assert(historyChart.replay?.entry.id === 'replay-old', 'Chart point selected the wrong reading');
     $('#replay-all').click();
-    assert(historyChart.replay.entry.id === 'replay-new' && historyChart.replay.total === 3, 'Sequence did not start newest eligible first');
+    assert(historyChart.replay.entry.id === 'replay-new' && historyChart.replay.total === 3 && replay.active, 'Sequence did not start newest eligible first');
     fakeNow += 29999; await sleep(40);
     assert(historyChart.replay.entry.id === 'replay-new', 'Trailing silence was skipped');
     fakeNow += 1; await sleep(40);
@@ -609,7 +624,7 @@ await check('History replays individual points and visible readings newest first
     fakeNow += 30000; await sleep(40);
     assert(historyChart.replay.entry.id === 'replay-old', 'Older reading was not next');
     fakeNow += 30000; await sleep(40);
-    assert(!historyChart.replay && $('#replay-status').textContent === 'Replay finished.', 'Sequence failed to finish');
+    assert(!historyChart.replay && !replay.active && $('#replay-status').textContent === 'Replay finished.' && $('#replay-stop').disabled, 'Sequence failed to finish');
     assert(layout() === idleLayout, 'Finished replay moved layout: ' + idleLayout + ' -> ' + layout());
     $('#history-context').value = 'resting'; $('#history-context').onchange(); $('#replay-all').click();
     assert(historyChart.replay.entry.id === 'replay-old' && historyChart.replay.total === 1, 'Sequence ignored context filter');
@@ -631,9 +646,9 @@ await check('History replays individual points and visible readings newest first
     ];
     for (let i=0;i<operations.length;i++) {
       selectedId=replayDog.id; setRange('all'); setHistoryContext('all'); showPage('history');
-      $('#replay-all').click(); assert(historyChart.replay, 'Cannot start lifecycle case '+i);
+      $('#replay-all').click(); assert(historyChart.replay && replay.active, 'Cannot start lifecycle case '+i);
       await operations[i](); await sleep(30);
-      assert(!historyChart.replay && $('#replay-stop').disabled, 'Replay survived lifecycle case '+i);
+      assert(!historyChart.replay && !replay.active && $('#replay-stop').disabled, 'Replay survived lifecycle case '+i);
     }
   } finally {
     tapSound.play = playSound; stopReplay(); selectedId=originalDog; fakeNow=originalNow;

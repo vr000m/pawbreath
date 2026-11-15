@@ -50,7 +50,8 @@ const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', tim
 let visibleReadings = [];
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const historyChart = createHistoryChart({ canvas: $('#history-chart'), timeline: $('#tap-timeline'), reducedMotion });
-const replay = createReplayController({ onFrame: renderReplay, onEnd: () => stopReplay('Replay finished.') });
+// The controller is the one record of whether playback runs (replay.active); the chart only paints the frames it gets.
+const replay = createReplayController({ onFrame: renderReplay, onEnd: () => clearReplay('Replay finished.') });
 
 // The detail panel keeps its layout space; inactive, it is invisible, unfocusable and hidden from assistive tech.
 function setReplayDetail(active) {
@@ -60,8 +61,13 @@ function setReplayDetail(active) {
 }
 
 function stopReplay(message = 'Replay stopped.') {
+  const wasActive = replay.active;
   replay.stop();
-  if (!historyChart.replay) return;
+  if (wasActive) clearReplay(message);
+}
+
+// Playback has ended (stopped, replaced or finished): clear the frame and restore the idle controls.
+function clearReplay(message) {
   historyChart.setReplay(null);
   const stop = $('#replay-stop');
   // A disabled Stop button must not strand keyboard and screen-reader focus.
@@ -110,7 +116,7 @@ $('#history-chart').onclick = event => {
   const point = historyChart.pointAt(event.clientX - rect.left, event.clientY - rect.top);
   if (point) startReplay([point.entry]);
 };
-reducedMotion.addEventListener('change', () => { if (historyChart.replay) drawReplayPoint(); });
+reducedMotion.addEventListener('change', () => { if (replay.active) drawReplayPoint(); });
 
 function showError(error) {
   $('#error').textContent = error.message || 'Something went wrong. Please try again.';
@@ -344,8 +350,12 @@ function leaveCountingView() {
   const moved = counterCard.parentElement === countingDialog;
   if (countingDialog.open) countingDialog.close();
   if (moved) counterHome.after(counterCard);
-  stopTapSound();
-  if (moved) announceUpdateNotice();
+  // Only a count ending releases audio and supersedes a pending tap-sound check. A reset that ended no count
+  // (refresh, duration, dog select, save, discard) leaves the tick's check to report the device.
+  if (moved) {
+    stopTapSound();
+    announceUpdateNotice();
+  }
   return moved;
 }
 

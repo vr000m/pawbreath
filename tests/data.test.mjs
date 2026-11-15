@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { validateDog, validateReading, validateBackup, makeBackup, readBackupFile, toCsv, respiratoryRate, manualDate,
-  CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId, newestFirst } from '../dist/data.mjs';
+  CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId, newestFirst, NEWEST_READABLE_VERSION, READABLE_VERSIONS } from '../dist/data.mjs';
+import * as dataModule from '../dist/data.mjs';
 
 const dog = { id: 'dog-1', name: 'Milo', threshold: null, photo: '' };
 const reading = { id: 'reading-1', dogId: dog.id, date: '2026-11-12T21:00:00.000Z', count: 12, seconds: 30, rate: 24, notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
@@ -67,6 +68,20 @@ test('format 3 preserves traces; versions 1 and 2 stay untimed, export as format
     assert.equal(makeBackup(legacy).version, 2);
     assert.throws(() => validateBackup({ ...input, version }), /version 3/);
   }
+});
+
+// Contract: the readable formats, the import gate and its error message all come from NEWEST_READABLE_VERSION;
+// no export writes that number unless a reading carries timing.
+test('import accepts formats 1 up to NEWEST_READABLE_VERSION and the error names exactly that set', () => {
+  assert.ok(!('VERSION' in dataModule), 'the ambiguous VERSION export must stay renamed');
+  assert.equal(NEWEST_READABLE_VERSION, 3);
+  assert.deepEqual(READABLE_VERSIONS, [1, 2, 3]);
+  assert.ok(Object.isFrozen(READABLE_VERSIONS));
+  for (const version of READABLE_VERSIONS) assert.equal(validateBackup({ ...backup(), version }).version, 2);
+  for (const version of [0, NEWEST_READABLE_VERSION + 1, '3', null]) {
+    assert.throws(() => validateBackup({ ...backup(), version }), { message: 'Choose a Pawbreath version 1, 2 or 3 backup (.json).' });
+  }
+  assert.equal(makeBackup(backup()).version, 2, 'an untimed export must not write the newest readable version');
 });
 
 // Contract: the export version is the lowest format able to represent the snapshot (2 without tap timing, 3 with

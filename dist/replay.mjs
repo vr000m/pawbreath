@@ -27,9 +27,11 @@ function tapsAt(offsets, elapsed) {
 export function createReplayController({ now = () => performance.now(),
   requestFrame = callback => requestAnimationFrame(callback), cancelFrame = id => cancelAnimationFrame(id),
   onFrame = () => {}, onEnd = () => {} } = {}) {
-  let frame = null, generation = 0;
+  // The one record of whether playback is running: callers ask `active`, never a renderer's state.
+  let frame = null, generation = 0, running = false;
   function stop() {
     generation++;
+    running = false;
     if (frame !== null) cancelFrame(frame);
     frame = null;
   }
@@ -37,6 +39,7 @@ export function createReplayController({ now = () => performance.now(),
     stop();
     const queue = replayableReadings(entries);
     if (!queue.length) return false;
+    running = true;
     const token = generation, started = now();
     let index = 0, precedingMs = 0;
     function tick() {
@@ -47,6 +50,7 @@ export function createReplayController({ now = () => performance.now(),
       while (index < queue.length && elapsed >= precedingMs + queue[index].seconds * 1000) {
         precedingMs += queue[index++].seconds * 1000;
       }
+      // Inactive before onEnd runs, so an end handler sees the finished state.
       if (index === queue.length) { stop(); onEnd(); return; }
       const entry = queue[index], elapsedMs = elapsed - precedingMs;
       const tapCount = tapsAt(entry.tapOffsetsMs, elapsedMs);
@@ -58,5 +62,5 @@ export function createReplayController({ now = () => performance.now(),
     tick();
     return true;
   }
-  return { start, stop };
+  return { start, stop, get active() { return running; } };
 }

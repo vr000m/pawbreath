@@ -116,3 +116,32 @@ test('synchronous onFrame stop or replacement cannot leave duplicate animation l
   c.start([entry('first')]);
   assert.deepEqual(states, ['first', 'second']); assert.equal(callbacks.length, 0);
 });
+
+// Contract: the controller is the one record of whether playback is running. active is true from a successful
+// start() (including inside every onFrame) until stop(), replacement by start(), an empty start() or the natural end;
+// it is already false when onEnd runs, and a stale callback never revives it.
+test('active reports playback across start, frames, natural end, stop, replacement and empty start', () => {
+  const seen = [];
+  let time = 0, c;
+  const frames = [];
+  c = createReplayController({ now: () => time, requestFrame: cb => frames.push(cb), cancelFrame() {},
+    onFrame: () => seen.push(['frame', c.active]), onEnd: () => seen.push(['end', c.active]) });
+  const run = () => { const cbs = frames.splice(0); cbs.forEach(cb => cb()); };
+  assert.equal(c.active, false, 'idle controller');
+  assert.equal(c.start([entry('one')]), true);
+  assert.equal(c.active, true, 'after start');
+  time = 15000; run(); assert.equal(c.active, true, 'mid-clip');
+  time = 30000; run();
+  assert.equal(c.active, false, 'after natural end');
+  assert.deepEqual(seen, [['frame', true], ['frame', true], ['end', false]]);
+  c.start([entry('two')]); assert.equal(c.active, true);
+  const stale = frames.splice(0)[0];
+  c.stop(); assert.equal(c.active, false, 'after stop');
+  stale(); assert.equal(c.active, false, 'stale callback revived playback');
+  c.start([entry('three')]); c.start([entry('four')]);
+  assert.equal(c.active, true, 'after replacement');
+  assert.equal(c.start([]), false); assert.equal(c.active, false, 'empty start stops the previous playback');
+  const legacy = entry('legacy'); delete legacy.tapOffsetsMs;
+  c.start([entry('five')]); assert.equal(c.start([legacy]), false); assert.equal(c.active, false, 'unreplayable start');
+  c.stop(); assert.equal(c.active, false, 'stop is idempotent');
+});

@@ -15,12 +15,12 @@ A static HTML/CSS/JavaScript app with device-local IndexedDB storage. No third-p
 | --- | --- |
 | `dist/index.html`, `app.css`, `app.js` | Profiles/photos, counter, manual-entry forms, guidance, History and Settings |
 | `dist/replay.mjs`, `history-chart.mjs`, `tap-sound.mjs` | Replay timing controller; History chart drawing, point hit-testing and replay ring/timeline; quiet tap sound |
-| `dist/data.mjs` | Validation, transactional storage, CSV and JSON backup/restore, `CONTEXT_LABELS`, `withReadingDefaults`, `defaultDogId` and `manualDialogAction` |
+| `dist/data.mjs` | Validation, transactional storage, CSV and JSON backup/restore (`NEWEST_READABLE_VERSION`), `CONTEXT_LABELS`, `withReadingDefaults`, `defaultDogId`, `newestFirst` (the one reading order) and `manualDialogAction` |
 | `dist/updates.mjs`, `sw.js` | Update status and scoped offline shell; no journal writes |
 | `scripts/release.mjs`, `scripts/lib/precache-assets.mjs`, `dist/version.mjs`, `dist/release.json` | Deterministic app release/build identity; published metadata is network-only |
 | `dist/manifest.webmanifest`, icons | Home-screen installation |
 | `wrangler.jsonc`, `dist/_headers`, `scripts/cloudflare.sh`, `justfile` | Hosting, security headers, external credentials and deployment checks |
-| `tests/` | Data/worker/update/deployment tests, `manual-dialog.test.mjs`, `structure.test.mjs` (including the phone-layout and 16px-control checks, and the single phone-block, wide-screen complement and source-order guards) and browser harness |
+| `tests/` | Data/worker/update/deployment tests, `manual-dialog.test.mjs`, `replay.test.mjs`, `history-chart.test.mjs`, `tap-sound.test.mjs`, `structure.test.mjs` (module import/precache checks over the derived module set) (including the phone-layout and 16px-control checks, and the single phone-block, wide-screen complement and source-order guards) and browser harness |
 
 ```mermaid
 flowchart LR
@@ -85,4 +85,4 @@ The [recorded tap replay plan](20261114-feature-breath-timing-replay.md) superse
 
 ### 2026-11-14 owner decision: lowest export format
 
-Superseding "new exports use format 3" above: a backup is format 2 when no reading carries tap timing, so installs on 1.1.0 can still restore it, and format 3 only when at least one reading does. Import accepts formats 1, 2 and 3; v1/v2 files carrying timing are rejected. See the [replay plan](20261114-feature-breath-timing-replay.md), round 3 part 2.
+Narrowing "exports containing timing use format 3" above: a backup is format 2 when no reading carries tap timing, so installs on 1.1.0 can still restore it, and format 3 only when at least one reading does. Import accepts formats 1, 2 and 3; v1/v2 files carrying timing are rejected. See the [replay plan](20261114-feature-breath-timing-replay.md), round 3 part 2.

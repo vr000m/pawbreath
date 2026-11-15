@@ -1,6 +1,9 @@
 export const FORMAT = 'pawbreath';
-// The newest backup format this app reads. Exports use the lowest format able to represent the snapshot.
-export const VERSION = 3;
+// The newest backup format this app reads; it accepts every format from 1 up to it. Exports do not write this
+// number: they write the lowest format able to represent the snapshot (UNTIMED_VERSION or TIMING_VERSION).
+export const NEWEST_READABLE_VERSION = 3;
+export const READABLE_VERSIONS = Object.freeze(Array.from({ length: NEWEST_READABLE_VERSION }, (_, i) => i + 1));
+const readableList = `${READABLE_VERSIONS.slice(0, -1).join(', ')} or ${READABLE_VERSIONS.at(-1)}`;
 // The first backup format that may carry recorded tap timing. Later formats keep accepting it.
 const TIMING_VERSION = 3;
 // Readings without tap timing fit format 2, which apps on 1.1.0 can still restore.
@@ -139,8 +142,8 @@ export function manualDialogAction({ event, dirty, cancelable = false, confirmOp
 }
 
 export function validateBackup(input) {
-  requireValue(input && input.format === FORMAT && [1, 2, VERSION].includes(input.version),
-    'Choose a Pawbreath version 1, 2 or 3 backup (.json).');
+  requireValue(input && input.format === FORMAT && READABLE_VERSIONS.includes(input.version),
+    `Choose a Pawbreath version ${readableList} backup (.json).`);
   requireValue(Array.isArray(input.dogs) && Array.isArray(input.readings), 'This backup is incomplete.');
   const dogs = input.dogs.map(validateDog);
   const readings = input.readings.map(reading => {
@@ -160,7 +163,7 @@ export function validateBackup(input) {
 
 // Validates as the newest readable format, then writes the version validateBackup chose (2 or 3).
 export function makeBackup(snapshot) {
-  return { ...validateBackup({ ...snapshot, format: FORMAT, version: VERSION }), exportedAt: new Date().toISOString() };
+  return { ...validateBackup({ ...snapshot, format: FORMAT, version: NEWEST_READABLE_VERSION }), exportedAt: new Date().toISOString() };
 }
 
 export async function readBackupFile(file) {
