@@ -76,6 +76,20 @@ function respiratoryRate() { return -999; }
     /respiratoryRate is declared by data\.mjs and history-chart\.mjs/);
 });
 
+test('a fixed-width \\uXXXX escape consumes exactly four hex digits, however many hex letters follow (round-8)', () => {
+  assert.deepEqual(names(String.raw`function \u0072espiratoryRate() {}`), ['respiratoryRate']);
+  assert.deepEqual(names(String.raw`const \u0061bcd = 1; let \u{61}bcd2 = 2; var x\u0061bc\u{64}ef = 3;`), ['abcd', 'abcd2', 'xabcdef']);
+  assert.throws(() => assertNoTopLevelCollisions({ one: 'function respiratoryRate() {}', two: String.raw`function \u0072espiratoryRate() { return -999; }` }),
+    /respiratoryRate is declared by one and two/);
+  const read = name => readFileSync(new URL(`../dist/${name}`, import.meta.url), 'utf8')
+    .replace(/^import [^;]+;\n/gm, '').replaceAll('export ', '');
+  const chart = read('history-chart.mjs') + String.raw`
+function \u0072espiratoryRate() { return -999; }
+`;
+  assert.throws(() => assertNoTopLevelCollisions({ 'data.mjs': read('data.mjs'), 'history-chart.mjs': chart }),
+    /respiratoryRate is declared by data\.mjs and history-chart\.mjs/);
+});
+
 test('a strict piece with reserved-in-strict words in strings, comments and properties still works (round-7 N2)', () => {
   const strict = `"use strict";
 // eval arguments yield let static interface package private protected public implements

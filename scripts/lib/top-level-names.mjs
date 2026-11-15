@@ -14,6 +14,9 @@
 // such as arguments, eval, yield, static or interface cannot be bound; one probe per piece detects that and keeps only
 // candidates bindable in the piece's own mode (a strict piece cannot declare those words either).
 //
+// Escape and non-ASCII identifier handling is best-effort.
+// Shipped modules use ASCII names and have no strict directive.
+//
 // Known limits: a piece must parse on its own inside an async function (so it cannot declare `await`, and a sloppy
 // piece cannot use `yield` as an expression); sloppy-mode Annex B hoisting of a block-level function declaration is
 // not reported (in strict modules it stays block scoped); collisions between pieces are checked by name only, not by
@@ -30,8 +33,8 @@ const canBind = (name, strict) => {
 };
 const escape = String.raw`\\u(?:[0-9A-Fa-f]{4}|\{[0-9A-Fa-f]+\})`;
 const identifier = new RegExp(String.raw`(?:[\p{ID_Start}$_]|${escape})(?:[\p{ID_Continue}$\u200C\u200D]|${escape})*`, 'gu');
-const decode = word => word.replace(/\\u\{?([0-9A-Fa-f]+)\}?/g, (_, hex) => {
-  const code = parseInt(hex, 16);
+const decode = word => word.replace(/\\u(?:([0-9A-Fa-f]{4})|\{([0-9A-Fa-f]+)\})/g, (_, fixed, braced) => {
+  const code = parseInt(fixed ?? braced, 16);
   return code <= 0x10FFFF ? String.fromCodePoint(code) : ' ';
 });
 // A decoded escape may not be an identifier character (for example \uFEFF in a string); such a word names nothing.
