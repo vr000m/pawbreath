@@ -57,6 +57,42 @@ test('an indented function appended to history-chart.mjs that shadows data.mjs i
   assert.doesNotThrow(() => assertNoTopLevelCollisions({ 'data.mjs': data, 'history-chart.mjs': read('history-chart.mjs') }));
 });
 
+test('escaped and non-ASCII identifiers are found under their decoded names (round-7 N1)', () => {
+  assert.deepEqual(names(String.raw`function respiratoryRate() {} const caf\u{e9} = 1; let ünïcode = 2; var 名前;`),
+    ['café', 'respiratoryRate', 'ünïcode', '名前']);
+  // Escapes in strings or comments that decode to no identifier (or to no code point at all) name nothing.
+  assert.deepEqual(names(String.raw`// a\u{110000}b c d
+const bom = '﻿';`), ['bom']);
+  assert.throws(() => assertNoTopLevelCollisions({ one: 'function respiratoryRate() {}', two: String.raw`function respiratoryRate() {}` }),
+    /respiratoryRate is declared by one and two/);
+  assert.throws(() => assertNoTopLevelCollisions({ one: 'function café() {}', two: String.raw`const café = 1;` }),
+    /café is declared by one and two/);
+  const read = name => readFileSync(new URL(`../dist/${name}`, import.meta.url), 'utf8')
+    .replace(/^import [^;]+;\n/gm, '').replaceAll('export ', '');
+  const chart = read('history-chart.mjs') + String.raw`
+function respiratoryRate() { return -999; }
+`;
+  assert.throws(() => assertNoTopLevelCollisions({ 'data.mjs': read('data.mjs'), 'history-chart.mjs': chart }),
+    /respiratoryRate is declared by data\.mjs and history-chart\.mjs/);
+});
+
+test('a strict piece with reserved-in-strict words in strings, comments and properties still works (round-7 N2)', () => {
+  const strict = `"use strict";
+// eval arguments yield let static interface package private protected public implements
+const text = "arguments eval yield let static interface";
+const obj = { arguments: 1, eval: 2, yield: 3, let: 4, static: 5 };
+obj.interface = obj.package;
+function shared() { return \`\${text} yield\`; }
+`;
+  assert.deepEqual(names(strict), ['obj', 'shared', 'text']);
+  assert.throws(() => assertNoTopLevelCollisions({ one: strict, two: 'const shared = 1;' }), /shared is declared by one and two/);
+  const read = name => readFileSync(new URL(`../dist/${name}`, import.meta.url), 'utf8')
+    .replace(/^import [^;]+;\n/gm, '').replaceAll('export ', '');
+  assert.doesNotThrow(() => assertNoTopLevelCollisions({ 'data.mjs': read('data.mjs'), 'history-chart.mjs': '"use strict";\n// eval\n' + read('history-chart.mjs') }));
+  // A sloppy piece may still declare a name that is reserved only in strict code.
+  assert.throws(() => assertNoTopLevelCollisions({ one: 'var yield = 1;', two: 'var interface, yield;' }), /yield is declared by one and two/);
+});
+
 test('the browser harness uses this guard and no column-zero declaration regex', () => {
   const harness = readFileSync(new URL('browser-check.mjs', import.meta.url), 'utf8');
   assert.match(harness, /assertNoTopLevelCollisions\(pieces\)/);
