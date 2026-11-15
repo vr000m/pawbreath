@@ -2,6 +2,7 @@ import { openDatabase, readAll, saveDog, saveReading, deleteReading, restoreBack
   readBackupFile, makeBackup, toCsv, respiratoryRate, manualDate, manualDialogAction,
   CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId } from './data.mjs';
 import { createUpdateMonitor } from './updates.mjs';
+import { createTapSound } from './tap-sound.mjs';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -25,6 +26,15 @@ let photoBusy = false;
 let toastTimer;
 let installPrompt;
 let wakeLock;
+const tapSound = createTapSound(window.AudioContext || window.webkitAudioContext);
+const counterCard = document.querySelector('.counter-card');
+const counterHome = document.createComment('Counter home');
+counterCard.before(counterHome);
+const countingDialog = document.querySelector('#counting-dialog');
+const soundOnStatus = 'Tap sound on. Device volume or mute may prevent sound.';
+const soundUnavailableStatus = 'Tap sound is not available on this device.';
+let soundCheck = 0;
+let noticeAnnouncement;
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel('pawbreath-updates') : null;
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -272,11 +282,33 @@ function setLocked(locked) {
   for (const select of $$('#selected-dog, #history-dog-select')) select.disabled = locked || !snapshot.dogs.length;
   for (const element of $$('[data-page], [data-duration], #add-dog, #edit-dog')) element.disabled = locked;
   for (const element of $$('#manual-entry, #history-manual-entry')) element.disabled = locked || !dog() || !db;
+  $('#tap-sound').disabled = locked;
+}
+
+function leaveCountingView() {
+  const moved = counterCard.parentElement === countingDialog;
+  if (countingDialog.open) countingDialog.close();
+  if (moved) counterHome.after(counterCard);
+  tapSound.stop();
+  if (moved) announceUpdateNotice();
+  return moved;
+}
+
+// A notice that arrived during a count was inert behind the modal and never announced.
+// Clear and restore its text once the modal closes so the status live region announces it.
+function announceUpdateNotice() {
+  const notice = $('#update-notice');
+  const message = notice.textContent;
+  if (notice.hidden || !message) return;
+  clearTimeout(noticeAnnouncement);
+  notice.textContent = '';
+  noticeAnnouncement = setTimeout(() => { notice.textContent = message; }, 100);
 }
 
 function resetCounter(message = '') {
+  const wasCounting = leaveCountingView();
   $('#counter-number').textContent = 'Ready';
-  $('#counter-label').textContent = 'one tap per breath';
+  $('#counter-label').textContent = 'Count one breath';
   $('#timer-label').textContent = `${duration}-second measurement`;
   $('#timer-progress').value = 0;
   $('#timer-progress').max = duration;
@@ -293,6 +325,7 @@ function resetCounter(message = '') {
   $('#counter-instruction').textContent = 'Wait until your dog is settled or asleep.';
   $('#counter-status').textContent = message || (dog() ? 'Start the timer, then tap for each breath.' : 'Add your dog to begin.');
   setLocked(false);
+  if (wasCounting) $('#start').focus();
 }
 
 async function releaseWakeLock() {
@@ -317,6 +350,7 @@ function completeCount() {
   stopTimer();
   session = null;
   if (!finished.count) { resetCounter('No breaths were counted. Please try again.'); return; }
+  leaveCountingView();
   pending = { id: crypto.randomUUID(), dogId: finished.dogId, date: finished.date,
     count: finished.count, seconds: finished.seconds,
     rate: respiratoryRate(finished.count, finished.seconds), notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
@@ -332,6 +366,7 @@ function completeCount() {
   $('#result-threshold').textContent = exceeds ? `At or above the threshold you entered: ${dog().threshold} breaths/min. Follow the guidance your vet gave you.` : 'Review your count, add any notes, and save this moment.';
   $('#result-threshold').className = exceeds ? 'threshold-note' : 'muted';
   $('#counter-status').textContent = 'Reading ready to save.';
+  $('#counter-label').textContent = finished.count === 1 ? 'breath counted' : 'breaths counted';
   $('#counter-instruction').textContent = `${finished.count} breaths counted in ${finished.seconds} seconds.`;
   $('#save-reading').focus();
 }
@@ -356,9 +391,12 @@ $('#start').onclick = async () => {
   $('#breath-button').disabled = false;
   $('#breath-button').classList.add('active');
   $('#counter-number').textContent = '0';
-  $('#counter-label').textContent = 'breaths counted';
-  $('#counter-instruction').textContent = 'Tap the circle once for each breath.';
-  $('#counter-status').textContent = 'Keep this screen open while counting.';
+  $('#counter-instruction').textContent = 'Watch your dog. Tap the large area once per breath.';
+  $('#counter-status').textContent = $('#tap-sound').checked ? soundOnStatus : 'Keep this screen open while counting.';
+  countingDialog.append(counterCard);
+  try { countingDialog.showModal(); }
+  catch { cancelCount('Could not open counting. Please try again.'); return; }
+  tapSound.prepare($('#tap-sound').checked);
   $('#breath-button').focus();
   timer = setInterval(tick, 100);
   tick();
@@ -375,6 +413,24 @@ $('#breath-button').onclick = event => {
   session.count++;
   $('#counter-number').textContent = session.count;
   $('#undo').disabled = false;
+  tapSound.play();
+};
+// Ticking the box is a user gesture: start audio here and report what this device actually allows.
+// Unavailable audio unticks the box, so the checkbox always matches whether a count will try to sound.
+$('#tap-sound').onchange = async () => {
+  const box = $('#tap-sound');
+  const attempt = ++soundCheck;
+  const status = $('#counter-status');
+  if (!box.checked) {
+    if (!session && !pending && [soundOnStatus, soundUnavailableStatus].includes(status.textContent)) {
+      status.textContent = dog() ? 'Start the timer, then tap for each breath.' : 'Add your dog to begin.';
+    }
+    return;
+  }
+  const available = await tapSound.detect();
+  if (attempt !== soundCheck || !box.checked) return;
+  if (!available) { box.checked = false; tapSound.prepare(false); }
+  if (!pending) status.textContent = available ? soundOnStatus : soundUnavailableStatus;
 };
 $('#breath-button').onkeydown = event => { if (event.repeat) event.preventDefault(); };
 $('#undo').onclick = () => {
@@ -385,6 +441,14 @@ $('#undo').onclick = () => {
   $('#undo').disabled = session.count === 0;
 };
 $('#cancel').onclick = () => cancelCount();
+countingDialog.addEventListener('cancel', event => {
+  event.preventDefault();
+  if (session) cancelCount();
+});
+countingDialog.addEventListener('close', () => {
+  // close events are queued: an old event must not cancel a newly opened count.
+  if (!countingDialog.open && session) cancelCount();
+});
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && session) cancelCount('The count stopped when the app left the screen. Please start a new measurement.');
   if (!document.hidden && db && !session && !pending) refresh().catch(showError);
@@ -672,6 +736,7 @@ const updates = createUpdateMonitor({ storage: updateStorage, onChange(state) {
   $('#last-update-check').textContent = state.checked
     ? `Last successful check: ${dateFormat.format(new Date(state.checked))}` : 'No successful update check yet.';
   $('#check-updates').disabled = state.checking;
+  clearTimeout(noticeAnnouncement);
   $('#update-notice').hidden = !state.waiting && !state.activationChanged;
   $('#update-notice').textContent = state.message;
   $('#cache-status').textContent = !state.supported ? 'Offline loading is unavailable in this browser. Use a current browser over HTTPS.'

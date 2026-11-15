@@ -20,6 +20,8 @@ app = replaced(app, /^import [\s\S]+?from '\.\/data.mjs';\n/, '');
 app = replaced(app, "import { createUpdateMonitor } from './updates.mjs';\n", '');
 app = replaced(app, 'const updates = createUpdateMonitor({ storage: updateStorage, onChange(state) {', 'const updates = createUpdateMonitor({ serviceWorker: harnessServiceWorker, getRelease: async () => RELEASE, storage: updateStorage, onChange(state) {');
 app = replaced(app, '  prepareOffline();', "  $('#cache-status').textContent = 'Offline installation is excluded from the file-based test harness.';");
+app = replaced(app, "import { createTapSound } from './tap-sound.mjs';\n", '');
+const tapSoundSource = replaced(readFileSync(new URL('tap-sound.mjs', dist), 'utf8'), 'export ', '', true);
 const checks = `
 const output = document.createElement('pre');
 output.id = 'test-results';
@@ -66,6 +68,117 @@ await check('History has its own dog picker that shares the selection with Measu
 });
 let fakeNow = 0;
 Object.defineProperty(performance, 'now', {configurable:true, value:()=>fakeNow});
+await check('The breath action keeps its visible name and exposes the count through every state', async () => {
+  const verify = (value, label = 'Count one breath') => {
+    const button = $('#breath-button');
+    assert($('#counter-label').textContent === label, 'Visible label is ' + $('#counter-label').textContent + ', expected ' + label);
+    assert(button.getAttribute('aria-labelledby') === 'counter-label', 'Name does not use the visible label');
+    assert(button.getAttribute('aria-describedby') === 'counter-number', 'Count is not exposed as a description');
+    assert($('#counter-number').textContent === value, 'Count description differs from the display');
+  };
+  verify('Ready');
+  $('#start').click(); verify('0');
+  assert($('#counter-instruction').textContent === 'Watch your dog. Tap the large area once per breath.', 'Instruction relies on colour or changed');
+  $('#breath-button').click(); verify('1');
+  $('#undo').click(); verify('0');
+  $('#cancel').click(); verify('Ready');
+  $('#start').click(); $('#breath-button').click();
+  fakeNow = 30000; tick(); verify('1', 'breath counted');
+  assert(!countingDialog.open && document.activeElement === $('#save-reading'), 'Completion did not restore result focus');
+  const discard = $('#discard').onclick(); $('#confirm-yes').click(); await discard;
+  verify('Ready');
+  fakeNow = 0; $('#start').click(); for (let i = 0; i < 13; i++) $('#breath-button').click();
+  fakeNow = 30000; tick(); verify('13', 'breaths counted');
+  const discardMany = $('#discard').onclick(); $('#confirm-yes').click(); await discardMany;
+  verify('Ready'); fakeNow = 0;
+});
+await check('Counting dialog restores the card on every exit and isolates later sessions', async () => {
+  const home = counterCard.parentElement;
+  const restored = () => {
+    assert(!countingDialog.open && counterCard.parentElement === home, 'Counter not restored');
+    assert(!session && !timer, 'Hidden count remains active');
+  };
+  $('#start').click();
+  assert(countingDialog.open && counterCard.parentElement === countingDialog, 'Count did not open modally');
+  for (const key of ['Enter',' ']) {
+    const repeat = new KeyboardEvent('keydown', {key,repeat:true,cancelable:true});
+    $('#breath-button').dispatchEvent(repeat);
+    assert(repeat.defaultPrevented && session.count===0, 'Held key repeated a count');
+  }
+  for (const type of ['pointerdown','pointercancel','pointerup']) $('#breath-button').dispatchEvent(new PointerEvent(type, {pointerId:1,pointerType:'touch'}));
+  assert(session.count===0, 'Raw/cancelled pointer sequence changed the count');
+  countingDialog.dispatchEvent(new Event('cancel', {cancelable:true})); restored();
+  assert(document.activeElement === $('#start'), 'Cancel focus not restored');
+  $('#start').click();
+  await sleep(0); // Consume the earlier queued close event while the new dialog is open.
+  assert(session && countingDialog.open, 'Old close event cancelled a new count');
+  countingDialog.close();
+  for (let i=0; i<50 && session; i++) await sleep(10);
+  restored();
+  const open = countingDialog.showModal;
+  countingDialog.showModal = () => { throw new Error('Open failed'); };
+  try { $('#start').click(); restored(); }
+  finally { countingDialog.showModal = open; }
+  $('#start').click(); fakeNow += 30000; tick(); restored();
+  assert(!pending, 'Zero count produced a result');
+  fakeNow = 0;
+});
+await check('Delayed audio never blocks counting or replays tones into a later session', async () => {
+  const original = {...tapSound};
+  const checked = $('#tap-sound').checked;
+  let context, tones=0;
+  const resumes=[];
+  class DeferredAudio {
+    constructor() { context=this; this.state='suspended'; this.currentTime=0; }
+    resume() { return new Promise((resolve,reject)=>resumes.push({resolve,reject})); }
+    createOscillator() { tones++; return {frequency:{},connect(){},disconnect(){},start(){},stop(){}}; }
+    createGain() { return {gain:{setValueAtTime(){},linearRampToValueAtTime(){}},connect(){},disconnect(){}}; }
+  }
+  Object.assign(tapSound,createTapSound(DeferredAudio));
+  try {
+    $('#tap-sound').checked=true; $('#start').click();
+    assert(timer && session && countingDialog.open, 'Audio delayed the measurement');
+    const requested=resumes.length;
+    $('#breath-button').click(); $('#breath-button').click();
+    assert(session.count===2 && tones===0, 'Suspended audio affected counting');
+    assert(resumes.length===requested+2, 'A tap on suspended audio did not request resume');
+    $('#cancel').click(); $('#tap-sound').checked=false; $('#start').click();
+    const next=session;
+    context.state='running'; resumes[0].resolve(); await sleep(0);
+    assert(session===next && session.count===0 && tones===0, 'Late audio changed a later session');
+    $('#breath-button').click(); assert(session.count===1 && tones===0, 'Opt-out made a tone');
+    $('#cancel').click(); $('#tap-sound').checked=true; context.state='suspended'; $('#start').click();
+    resumes.at(-1).reject(new Error('Audio denied')); await sleep(0);
+    $('#breath-button').click(); assert(session.count===1 && tones===0, 'Rejected audio blocked counting');
+    context.state='running'; $('#breath-button').click();
+    assert(session.count===2 && tones===1, 'Accepted click did not produce exactly one tone');
+    $('#undo').click(); assert(session.count===1 && tones===1, 'Undo requested a breath tone');
+  } finally { $('#cancel').click(); Object.assign(tapSound,original); $('#tap-sound').checked=checked; }
+});
+await check('Ticking tap sound reports real audio availability and never blocks counting', async () => {
+  const original = {...tapSound};
+  const box = $('#tap-sound');
+  const tickBox = async () => { box.checked = true; box.dispatchEvent(new Event('change')); await sleep(0); await sleep(0); };
+  class Running { constructor() { this.state='suspended'; this.currentTime=0; } resume() { this.state='running'; return Promise.resolve(); } suspend() { this.state='suspended'; return Promise.resolve(); }
+    createOscillator() { return {frequency:{},connect(){},disconnect(){},start(){},stop(){}}; } createGain() { return {gain:{setValueAtTime(){},linearRampToValueAtTime(){}},connect(){},disconnect(){}}; } }
+  try {
+    Object.assign(tapSound, createTapSound(undefined));
+    await tickBox();
+    assert($('#counter-status').textContent === 'Tap sound is not available on this device.', 'Missing audio status: ' + $('#counter-status').textContent);
+    assert(!box.checked, 'Unavailable sound left the box ticked');
+    $('#start').click(); $('#breath-button').click();
+    assert(session && session.count === 1 && $('#counter-status').textContent === 'Keep this screen open while counting.', 'Unavailable sound affected counting');
+    $('#cancel').click();
+    Object.assign(tapSound, createTapSound(class { constructor() { throw new Error('No audio'); } }));
+    await tickBox();
+    assert(!box.checked && $('#counter-status').textContent === 'Tap sound is not available on this device.', 'Throwing audio reported as on');
+    Object.assign(tapSound, createTapSound(Running));
+    await tickBox();
+    assert(box.checked && $('#counter-status').textContent === 'Tap sound on. Device volume or mute may prevent sound.', 'Available audio status: ' + $('#counter-status').textContent);
+    box.checked = false; box.dispatchEvent(new Event('change'));
+    assert($('#counter-status').textContent === 'Start the timer, then tap for each breath.', 'Unticking left a sound status');
+  } finally { Object.assign(tapSound, original); box.checked = false; }
+});
 await check('30-second count, undo, deadline, save and persisted result', async () => {
   $('#start').click();
   for(let i=0;i<13;i++) $('#breath-button').click();
@@ -208,9 +321,19 @@ await check('Checking and downloading updates preserves active counts, results a
   worker.state = 'installed';
   worker.dispatchEvent(new Event('statechange'));
   assert(session === active && !$('#update-notice').hidden, 'Waiting update interrupted count or hid notice');
+  const notice = $('#update-notice'), message = notice.textContent;
+  $('#breath-button').click();
+  assert(session === active && session.count === 2, 'Mid-count notice altered counting');
+  const announced = [];
+  const observer = new MutationObserver(records => { for (const r of records) for (const n of r.addedNodes) announced.push(n.textContent); });
+  observer.observe(notice, {childList:true, characterData:true, subtree:true});
   fakeNow += duration * 1000;
   tick();
   const completed = pending;
+  assert(completed?.count === 2, 'Mid-count notice changed the result');
+  await sleep(250); observer.disconnect();
+  assert(!countingDialog.open && announced.includes(message) && notice.textContent === message && !notice.hidden,
+    'Notice was not re-announced after the counting view closed: ' + JSON.stringify(announced));
   $('#reading-notes').value = 'Keep this unsaved note';
   await updates.check();
   assert(pending === completed && $('#reading-notes').value === 'Keep this unsaved note', 'Update lost result');
@@ -364,44 +487,109 @@ await check('Smoke: a long dog name fits beside the phone picker controls', asyn
     assert(box('.history-toolbar .segments').right <= 320 && box('#add-dog').right <= 320, 'a control is pushed off a 320px screen');
   } finally { frame.remove(); }
 });
-// Mid-count geometry across phone heights. Margins measured in Chromium (circle bottom minus bar top): -12 at
-// 480, -2.2 at 561, -7.3 at 568, -12 from 641 to 666 (picker and instruction hidden), +11.6 at 667, -0.8 at 684.
-// Between 667 and 682 the circle dips into the bar's transparent top fade (pointer-events:none) but clears the
-// solid Undo button; without the short-phone block it reached Undo up to 663px. Below about 461px nothing clears.
-await check('Mid-count the whole circle clears the pinned Undo/Cancel bar from 480px to 844px tall', async () => {
+// Use the real stylesheet with only env() values replaced in this isolated frame. A viewport-only
+// test sees zero safe areas and missed Undo moving over the circle on installed phones.
+await check('Counting targets stay separate and reachable across phone sizes, safe areas and scrolling', async () => {
+  const layoutCss = ${JSON.stringify(readFileSync(new URL('app.css', dist), 'utf8'))};
   const frame = document.createElement('iframe');
-  frame.style.cssText = 'position:absolute;left:-10000px;top:0;width:320px;height:480px;border:0';
-  frame.srcdoc = '<!doctype html><html><head><meta name="viewport" content="width=device-width"><link rel="stylesheet" href="' + document.querySelector('link[rel=stylesheet]').href + '"></head><body>'
-    + document.querySelector('header').outerHTML + document.querySelector('main').outerHTML + '</body></html>';
+  frame.style.cssText = 'position:absolute;left:-10000px;top:0;width:390px;height:844px;border:0';
+  frame.srcdoc = '<!doctype html><html><head><meta name="viewport" content="width=device-width"><style id="layout"></style></head><body>'
+    + document.querySelector('header').outerHTML + document.querySelector('main').outerHTML + '<dialog id="counting-dialog" aria-label="Breath counting"></dialog></body></html>';
   const loaded = new Promise(resolve => frame.addEventListener('load', resolve, {once:true}));
   document.body.append(frame);
   try {
     await loaded;
-    const doc = frame.contentDocument;
-    for (let i = 0; i < 50 && !doc.styleSheets.length; i++) await sleep(50);
-    // The state counting() sets up: Measure shown, the circle active, Undo and Cancel in place of Start.
-    for (const section of doc.querySelectorAll('.page')) section.hidden = section.id !== 'measure-page';
-    doc.querySelector('#breath-button').classList.add('active');
-    doc.querySelector('#start').hidden = true;
-    doc.querySelector('#undo').hidden = false;
-    doc.querySelector('#cancel').hidden = false;
+    const doc = frame.contentDocument, win = frame.contentWindow;
+    const circle = doc.querySelector('#breath-button');
+    const modal = doc.querySelector('#counting-dialog'), card = doc.querySelector('.counter-card'), home = card.parentElement;
+    const anchor = doc.createComment('home'); card.before(anchor);
     const box = selector => doc.querySelector(selector).getBoundingClientRect();
-    // [width, height, what the circle must clear]
-    const cases = [[320,480,'#counter-controls'],[320,560,'#counter-controls'],[320,561,'#counter-controls'],[320,568,'#counter-controls'],
-      [360,640,'#counter-controls'],[360,641,'#counter-controls'],[360,660,'#counter-controls'],[360,666,'#counter-controls'],
-      [375,667,'#undo'],[360,680,'#undo'],[360,684,'#counter-controls'],[375,700,'#counter-controls'],[390,844,'#counter-controls']];
-    for (const [width, height, target] of cases) {
-      frame.style.width = width + 'px';
-      frame.style.height = height + 'px';
-      const at = width + 'x' + height + ': ';
-      assert(frame.contentWindow.matchMedia('(max-width:600px)').matches, at + 'the frame is not phone width');
-      // Guard: an unstyled frame puts the controls in flow below the circle and would pass vacuously.
-      assert(frame.contentWindow.getComputedStyle(doc.querySelector('#counter-controls')).position === 'sticky', at + 'the stylesheet did not apply (controls not sticky)');
-      const size = Math.min(225, Math.max(150, height * 0.27));
-      assert(Math.abs(box('#breath-button').height - size) < 1, at + 'the circle is not clamp-sized (' + box('#breath-button').height + ' vs ' + size + ')');
-      for (const selector of ['#timer-label', '#timer-progress', '#breath-button', '#counter-number', '#undo', '#cancel']) assert(box(selector).height > 0, at + selector + ' is not shown mid-count');
-      assert(box('#breath-button').bottom <= box(target).top + 0.5, at + target + ' covers the circle (' + box('#breath-button').bottom + ' > ' + box(target).top + ')');
+    for (const section of doc.querySelectorAll('.page')) section.hidden = section.id !== 'measure-page';
+    doc.querySelector('#update-notice').hidden = false;
+    doc.querySelector('#update-notice').textContent = 'Update ready. Save your work and reopen.';
+    const active = value => {
+      if (value) { modal.append(card); if (!modal.open) modal.showModal(); }
+      else { if (modal.open) modal.close(); anchor.after(card); }
+      circle.classList.toggle('active', value); circle.disabled = !value;
+      doc.querySelector('#counter-number').textContent = value ? '123' : 'Ready';
+      doc.querySelector('#start').hidden = value;
+      doc.querySelector('#start').disabled = false;
+      for (const id of ['undo','cancel']) { doc.getElementById(id).hidden = !value; doc.getElementById(id).disabled = false; }
+    };
+    const apply = inset => {
+      doc.querySelector('#layout').textContent = layoutCss.replaceAll('env(safe-area-inset-bottom)', inset + 'px');
+    };
+    const viewportBottom = () => modal.open ? win.innerHeight : win.getComputedStyle(doc.querySelector('nav')).position === 'fixed' ? Math.min(win.innerHeight, box('nav').top) : win.innerHeight;
+    const reachable = selector => {
+      const element = doc.querySelector(selector);
+      element.scrollIntoView({block:'center'});
+      const r = box(selector), nav = box('nav');
+      assert(r.top >= -0.5 && r.bottom <= viewportBottom() + 0.5,
+        frame.dataset.case + selector + ' cannot be scrolled above navigation: ' + JSON.stringify({top:r.top,bottom:r.bottom,limit:viewportBottom()}));
+      const hit = doc.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      assert(element === hit || element.contains(hit), selector + ' does not receive its center tap');
+    };
+    const cases = [[320,480],[320,560],[320,561],[320,568],[360,640],[360,641],[360,660],[360,666],
+      [375,667],[360,680],[360,684],[375,700],[390,740],[390,844],[440,956],[844,390],[956,440],[390,420],[440,480]];
+    for (const [width,height] of cases) for (const inset of [0,20,34,48]) {
+      frame.style.width = width + 'px'; frame.style.height = height + 'px'; apply(inset);
+      const at = width + 'x' + height + ' inset ' + inset + ': '; frame.dataset.case=at;
+      active(false); win.scrollTo(0,0);
+      // Prove styling loaded; normal-flow rectangles alone could pass with no CSS.
+      assert(win.getComputedStyle(circle).borderRadius === '50%', at + 'circle stylesheet absent');
+      if (width <= 600) assert(win.getComputedStyle(doc.querySelector('#counter-controls')).position === 'sticky', at + 'idle Start stopped being sticky');
+      reachable('#start');
+      active(true); win.scrollTo(0,0);
+      const originalTarget=box('#breath-button').toJSON();
+      for (const count of ['9','10','99','100']) {
+        doc.querySelector('#counter-number').textContent=count;
+        assert(JSON.stringify(box('#breath-button').toJSON())===JSON.stringify(originalTarget),at+'target moved as count changed');
+      }
+      assert(doc.documentElement.scrollWidth <= width, at + 'horizontal overflow');
+      for (const y of [0, height / 2, modal.scrollHeight]) {
+        modal.scrollTo(0,y);
+        const r=box('#breath-button');
+        for (const selector of ['#undo','#cancel']) {
+          const control=box(selector);
+          assert(r.bottom <= control.top + 0.5, at + selector + ' overlaps the circle');
+        }
+        // Hit-test actual circle points within the unobscured viewport, including its lower edge.
+        const nav=box('nav');
+        for (const fraction of [0.1,0.5,0.9]) for (const across of [0.1,0.3,0.5,0.7,0.9]) {
+          const x=r.x+r.width*across, y=r.y+r.height*fraction;
+          if (y<0 || y>=viewportBottom()) continue;
+          const hit=doc.elementFromPoint(x,y);
+          assert(hit===circle || circle.contains(hit), at + 'a visible breath tap hits another element');
+        }
+      }
+      reachable('#breath-button'); reachable('#undo'); reachable('#cancel');
+      if ((width===390 && height===844) || (width===440 && height===956)) {
+        const r=box('#breath-button'),controls=box('#counter-controls');
+        assert(r.top>=0 && controls.bottom<=height+0.5, at + 'primary portrait cannot show target and controls together');
+        assert(r.width>=width-40, at + 'active target is not wide enough');
+      }
     }
+    // Stress safe-area-like top/side padding and larger control text on the primary profiles.
+    // These are synthetic constraints, not a claim that iOS exposes these exact values.
+    const stress=doc.createElement('style');
+    stress.textContent='body { padding:44px 20px 0; } button, input, select, textarea, #counter-label { font-size:20px !important; }';
+    doc.head.append(stress);
+    for (const [width,height] of [[390,844],[440,956],[844,390],[956,440]]) {
+      frame.style.width=width+'px'; frame.style.height=height+'px'; apply(34); active(true);
+      frame.dataset.case='large text/top-side padding '+width+'x'+height+': ';
+      assert(doc.documentElement.scrollWidth<=width,frame.dataset.case+'horizontal overflow');
+      reachable('#breath-button'); reachable('#undo'); reachable('#cancel');
+      assert(box('#breath-button').bottom<=box('#undo').top,frame.dataset.case+'Undo overlaps circle');
+    }
+    stress.remove();
+    // A smaller old-style target must fail the new width invariant.
+    frame.style.width='390px'; frame.style.height='844px'; apply(34); active(true);
+    const old=doc.createElement('style');
+    old.textContent='#counting-dialog .breath-circle { width:225px !important; }';
+    doc.head.append(old);
+    assert(box('#breath-button').width<350,'Target-width mutation did not shrink the target');
+    old.remove();
+    assert(box('#breath-button').width>=350,'Wide target did not recover');
   } finally { frame.remove(); }
 });
 await refresh();
@@ -416,7 +604,7 @@ const updates = replaced(replaced(readFileSync(new URL('updates.mjs', dist), 'ut
   "import { RELEASE } from './version.mjs';\n", ''), 'export ', '', true);
 const workerStub = `const harnessRegistration = Object.assign(new EventTarget(), {active:{}, waiting:null, installing:null, update:async()=>{}});
 const harnessServiceWorker = Object.assign(new EventTarget(), {controller:{}, register:async()=>harnessRegistration, getRegistration:async()=>harnessRegistration});`;
-const script = `window.testRun = crypto.randomUUID();\n(async () => {\n${version}\n${updates}\n${workerStub}\n${data}\n${app}\n${checks}\n})().catch(error => { document.title = 'Pawbreath harness failed'; document.body.prepend(Object.assign(document.createElement('pre'), {textContent:error.stack})); });`;
+const script = `window.testRun = crypto.randomUUID();\n(async () => {\n${version}\n${updates}\n${workerStub}\n${data}\n${tapSoundSource}\n${app}\n${checks}\n})().catch(error => { document.title = 'Pawbreath harness failed'; document.body.prepend(Object.assign(document.createElement('pre'), {textContent:error.stack})); });`;
 const outputPath = process.argv[2] || '/tmp/pawbreath-browser-check.html';
 let result = replaced(html, '  <script type="module" src="./app.js"></script>', '');
 result = replaced(result, /(src|href)="\.\/([^"#]+)"/g, (_, attr, path) => `${attr}="${new URL(path, dist).href}"`);

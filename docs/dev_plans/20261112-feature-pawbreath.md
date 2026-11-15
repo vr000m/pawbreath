@@ -1,10 +1,10 @@
 # Pawbreath home-screen app
 
-**Status:** In review — 1.1.0 implemented; phone-first layout pass (PR #4) desktop- and emulator-verified; physical-device acceptance pending
+**Status:** Deployed — 1.1.0 build `63316a30696f`; physical-device acceptance pending
 **Component:** Pawbreath
 **Branch:** feature/mobile-layout-pass
 **Date:** 2026-11-12
-**Updated:** 2026-11-13
+**Updated:** 2026-11-14
 **Objective:** Provide an offline dog breathing journal on a phone.
 
 ## Scope and architecture
@@ -48,6 +48,8 @@ flowchart LR
 - **2026-11-13:** Phone-first layout pass. Measure fits one screen with Start pinned above the tab bar; History gets its own dog picker; the app opens on the last-chosen dog, else the dog with the newest reading (`defaultDogId`), because the first-alphabetical default hid a real reading; CSV export moved to Settings because it covers every dog; Save/Cancel stay visible in the manual dialog; install help hides once installed; "Enter a reading" moved beside the Recorded moments list; form controls are at least 16px so iPhone does not zoom; on phones an update notice that arrives mid-count is visually hidden (still announced) until the count ends, so the circle clears the pinned controls; on phones 600px wide or less and 666px tall or less the duration picker and instruction also hide mid-count (with them shown the circle reached the solid Undo button up to 663px tall; at 667 to 682 it only dips into the bar's transparent fade), and at 600px wide and 560px tall or less the (disabled) dog picker too. The browser harness asserts the circle clears the bar at heights from 480 to 844; by manual measurement in the same frame it stops clearing below about 461px tall. Wide screens keep the same picker position on Measure and History.
 - **2026-11-13:** Consolidated this plan to retain decisions and final evidence. Superseded permission failures, interim test counts and handoff logs remain in Git history: `git show c28de322c645577736b5c040b1c950d0ff8a3838:docs/dev_plans/20261112-feature-pawbreath.md`.
 
+- **2026-11-14 correction:** PRs #2–#4 are merged and build `63316a30696f` is live. The zero-inset layout evidence below did not establish tap safety with safe areas. The [iPhone counting follow-up](20261114-bug-iphone-counting-layout.md) replaces active sticky controls with normal flow and resolves the visible/accessibility label mismatch; idle Start remains sticky. Its code and desktop evidence are separate from this deployed baseline, and physical iPhone checks remain pending.
+
 ## Verification and acceptance
 
 Verified 13 November 2026 for release 1.1.0, build `63316a30696f`:
@@ -58,16 +60,17 @@ Verified 13 November 2026 for release 1.1.0, build `63316a30696f`:
 - [x] Phone layout pass checked in Chromium DevTools emulation at 390x844, 375x667, a 568px-tall phone and 320x480, plus 1280x800: Start reachable on Measure, the count circle clears the Undo/Cancel bar mid-count, both dog pickers start at the same position, no horizontal overflow. A Lighthouse mobile audit was run; the one open finding is the breath button's accessible name ("Count one breath") not matching its visible text.
 - [x] Separate real localhost Chromium upgrade from `b54a8e48353a` to `a3f2bc133df7`: the worker waited through an active count, pending result notes, dirty manual form and profile edits. Closing one of two clients retained the remaining draft and kept the update waiting. After saving and closing all clients naturally, the new build reopened offline with identical journal data.
 - [x] After that upgrade, offline guidance, actual chart/list filtering, complete CSV/JSON downloads and timed/manual save visibility passed. Tested assets matched `dist/` byte for byte; no forced activation was used.
-- [ ] Known limit, not fixed: with a nonzero bottom safe-area inset (home-indicator iPhone in the installed app, Android edge-to-edge navigation bar) the pinned Undo/Cancel bar rises by the inset, and the count circle (27dvh, 150px minimum) can reach the Undo button at roughly 667-740px viewport heights. Measured in scratch copies of the stylesheet with insets of 20, 34 and 48px (for example inset 34 at 667px: circle bottom 31.6px below the top of Undo; inset 20 at 667px: 17.6px). Not reproduced on a physical device, and probably not reachable on home-indicator iPhones, whose installed-app viewport is about 758px or taller (inferred, not checked). A formula that shrank the circle by the inset was tried and reverted: it needed layout constants (`73dvh`, 487px) that drift with any header, picker or timer change.
+- [ ] Baseline safe-area overlap: measured 31.6px at 375×667 with inset 34px; not reproduced on a physical device. The follow-up linked above contains the fix and regression evidence. The earlier assumption that installed iPhone viewports would avoid this condition is withdrawn.
 - [ ] Physical phone (note the model): start a count and check Undo does not cover the circle.
-- [ ] Physical phone: `position: sticky` Start/Undo/Cancel bar over the tab bar, the `:has()` mid-count title rule, and the install card hiding in `display-mode: standalone`.
+- [ ] Physical phone: sticky idle Start and normal-flow active Undo/Cancel controls in the follow-up, and the install card hiding in `display-mode: standalone`.
 - [ ] Physical iPhone: Safari home-screen installation and offline reopening after fully quitting.
 - [ ] Physical iPhone: a long dog name truncates inside both pickers (Chromium and Firefox already shrink the select; Safari is unchecked).
 - [ ] Physical iPhone: update activation with Safari and the installed app both open; lock-screen/app-switch cancellation of active counts.
 - [ ] First measurement with a settled/asleep dog. User-reported checks of the deployed baseline do not verify this new release.
-- [ ] Merge and deploy 1.1.0; verify the deployed identity, HTTPS/redirects and installed app.
+- [x] PRs #2–#4 merged; live metadata and a fresh browser report 1.1.0 build `63316a30696f`.
+- [ ] Complete physical installed-app acceptance; deployment alone does not establish it.
 
-No deployment was performed during this feature's verification. The earlier blocked dry-run/desktop-upgrade claims are superseded by these results. [PR #2](https://github.com/vr000m/pawbreath/pull/2) contains the feature review.
+The original verification run did not deploy; the dated correction above records the subsequent live state. The earlier blocked dry-run/desktop-upgrade claims are superseded by these results. [PR #2](https://github.com/vr000m/pawbreath/pull/2) contains the feature review.
 
 ## Deferred work
 

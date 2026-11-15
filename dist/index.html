@@ -38,10 +38,11 @@
         <section class="counter-card" aria-labelledby="counter-heading">
           <div class="card-top"><h2 id="counter-heading">Resting breath count</h2><div class="segments" role="group" aria-label="Measurement duration"><button data-duration="30" aria-pressed="true">30 sec</button><button data-duration="60" aria-pressed="false">60 sec</button></div></div>
           <p id="counter-instruction">Wait until your dog is settled or asleep.</p>
+          <label class="checkbox-label" id="tap-sound-choice"><input id="tap-sound" type="checkbox">Quiet tap sound <span class="muted">Optional</span></label>
           <p id="timer-label" class="timer-label">30-second measurement</p>
           <progress id="timer-progress" value="0" max="30" aria-label="Measurement progress"></progress>
-          <button id="breath-button" class="breath-circle" disabled aria-label="Count one breath">
-            <span id="counter-number">Ready</span><span id="counter-label">one tap per breath</span>
+          <button id="breath-button" class="breath-circle" disabled aria-labelledby="counter-label" aria-describedby="counter-number">
+            <span id="counter-number">Ready</span><span id="counter-label">Count one breath</span>
             <span class="breath-wave" aria-hidden="true">⌁</span>
           </button>
           <div id="counter-controls" class="counter-controls"><button id="start" class="primary" disabled>Start counting <span aria-hidden="true">→</span></button><button id="undo" class="secondary" hidden>Undo last tap</button><button id="cancel" class="text-button" hidden>Cancel</button></div>
@@ -92,6 +93,8 @@
     </section>
     <footer>Made for the ones who make your day.</footer>
   </main>
+
+  <dialog id="counting-dialog" aria-label="Breath counting"></dialog>
 
   <dialog id="dog-dialog"><form id="dog-form"><div class="card-top"><h2 id="dog-dialog-title">Add your dog</h2><button type="button" id="close-dog" class="close-button" aria-label="Close dog profile">×</button></div><label for="dog-input">Name</label><input id="dog-input" required maxlength="60" autocomplete="off" placeholder="Your dog's name"><label for="threshold-input">Vet-recommended threshold <span class="muted">Optional</span></label><div class="input-unit"><input id="threshold-input" aria-describedby="threshold-help" type="number" min="1" max="300" step="1" placeholder="Leave blank if unset"><span>breaths/min</span></div><p id="threshold-help" class="small muted">Enter the threshold your vet recommends for this dog. Leave blank if none was given; the general 30 breaths/min reference is not applied automatically.</p><label for="photo-input">Photo <span class="muted">Optional</span></label><input id="photo-input" type="file" accept="image/*"><div class="photo-row"><img id="photo-preview" alt="Profile photo preview" hidden><button id="remove-photo" type="button" class="text-button" hidden>Remove photo</button></div><p id="dog-error" role="alert" class="form-error"></p><button class="primary" type="submit" id="save-dog">Save profile</button></form></dialog>
   <dialog id="manual-dialog"><form id="manual-form">
