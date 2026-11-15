@@ -1,6 +1,6 @@
 # Recorded tap timing and History replay
 
-**Status:** Implemented and desktop-verified; review-gauntlet closed after round 8 by owner choice (ledger non-terminal); physical acceptance pending
+**Status:** Released — 1.2.0 build `aa881e199dc7`; physical acceptance pending. Gauntlet closed by owner choice, not formally converged.
 **Component:** Pawbreath
 **Assignee:** Codex
 **Priority:** High
@@ -17,7 +17,7 @@ The user approved per-tap timestamps and a pulsing History replay after Claude c
 - Each new timed reading carries optional `tapOffsetsMs`, an array of integer milliseconds relative to the existing measurement-start `date`. Capture elapsed time from the monotonic measurement clock once per accepted click, floor to integer milliseconds, and retain initial/trailing silence using the full duration. Never record deadline/rejected taps. Undo removes the last offset; count always equals array length. Cancel discards the session; completion/save retry retains its exact array.
 - Validate present timing arrays as timed-only, length equal to count, dense, nondecreasing (same millisecond allowed), integer, nonnegative and strictly below seconds × 1000. Copy the array at validation/save boundaries. Absence means unavailable; do not invent timings for manual/legacy readings or accept null as a valid trace.
 - Store plain offset arrays in IndexedDB and JSON; this avoids repeated absolute timestamps without claiming two-byte packing in JSON. Keep IndexedDB schema 1: existing object stores need no migration. Export the lowest backup format able to hold the snapshot (format 2 without timing, format 3 once any reading has a trace; owner decision 2026-11-14, superseding "export format 3") and accept formats 1/2/3; formats 1/2 remain untimed and reject a timing field. Older apps reject format 3; document that exporting through an old app can strip timing and that rollback after new recordings is unsupported. CSV remains the existing all-records summary; JSON is the timing-preserving format.
-- App release becomes 1.2.0 (unreleased). No production deployment, merge, PR mutation or force-push in this task. Preserve Claude's counting/audio fixes.
+- Original implementation scope: prepare 1.2.0 without deploying, merging, changing PRs or force-pushing; preserve Claude's counting/audio fixes. The subsequent owner deployment is recorded under Release verification.
 - History offers a replay action per eligible reading and canvas-point selection, plus explicit “Replay newest first” for eligible visible readings of the selected dog. One reading at a time, newest to oldest by measurement date with deterministic ID tie-break; no automatic playback on page load and no synthetic replay for untimed readings. Keep chart x-axis chronological.
 - Playback is visual and silent at original 1× speed. Advance to the next reading only after the full 30/60-second recording duration, including silent start/end gaps; do not simulate the days between readings. A soft ring highlights only the active point at its recorded taps. Late animation frames use elapsed time and never burst/replay overdue pulses. Stored millisecond precision does not promise millisecond screen refresh.
 - Show the active reading's date, elapsed time/count and a static tap timeline. Label this recorded tap timing, not directly measured breathing. Reduced-motion users get a static selected point and timeline without pulsing. Accessible row buttons duplicate canvas interactions; announce reading transitions/Stop/completion, not every pulse.
@@ -67,7 +67,7 @@ Lossless trace round-trip, count/length parity, strict version boundaries, no fa
 - All cleanup/reduced-motion/resize tests pass and no background callbacks keep playback alive after stopping.
 - Full tests, browser checks and dry run pass; fresh offline reopening preserves replay data. Docs clearly distinguish recorded taps, compatibility constraints and pending physical checks.
 
-<!-- reviewed: 2026-11-14 @ e83b491c90bab42452cd176883b83ae6be87325c -->
+<!-- reviewed: 2026-11-15 @ 5ef38c0b9b38694481972ddc05a35d688f128b53 -->
 
 ## Progress
 
@@ -83,12 +83,12 @@ A browser cannot render separate pulses for taps closer than a display frame; st
 
 ## Final results — 14 November 2026
 
-Unreleased 1.2.0 build `aa881e199dc7` (previously `e9024750af83`, `4394d50f4e8a`, `7725cd92909e`, `eb51348c2b52`, `c16a4ce624d5`, `edf79fb91c75`, `b46ba9c9399c` and `24ef303881c6`; see the code-review fixes, layout follow-up and review-gauntlet rounds 1 to 8, round 3 part 2 included, below), stacked on Claude's `5266564`. Not deployed or merged.
+Implementation-stage snapshot: 1.2.0 build `aa881e199dc7` (previously `e9024750af83`, `4394d50f4e8a`, `7725cd92909e`, `eb51348c2b52`, `c16a4ce624d5`, `edf79fb91c75`, `b46ba9c9399c` and `24ef303881c6`; see the code-review fixes, layout follow-up and review-gauntlet rounds 1 to 8, round 3 part 2 included, below), stacked on Claude's `5266564`. That implementation stage did not deploy or merge; the subsequent production release is recorded below.
 
 - `npm test` and `just deploy-check`: 107 tests pass; metadata/syntax checks and Wrangler dry run pass. Browser harness: 30 checks pass (a pending tap-sound check survives an idle reset by refresh, duration or dog select; the replay check now also asserts stable layout; the untick check covers audio release; a same-date check asserts History list order equals replay order; a tap-sound check still pending when a count ends keeps the box and message; chart redraws keep the rendered readings), including save/restore timing equality, save failure/retry, caller mutation, per-point and newest-first replay, same-date points, context/export separation, resize, reduced motion and all cancellation paths.
 - Real Chromium touch profiles at 390×844 and 440×956: a service-worker upgrade from intermediate build `6379aad6d342` (reporting 1.1.0) waits while a count/form is active. After closure, 1.2.0 retains the exact old journal. New recordings retain offsets including Undo, and replay after an offline reload. No browser errors; no horizontal overflow; replay controls are at least 44px tall. Screenshots inspected. These are emulations, not physical Safari checks.
 - Invariant audit: the sole accepted-click path pushes one elapsed offset and derives count from array length; Undo pops and derives the same count. Completion copies the array. Validation copies before asynchronous IndexedDB work. Backup restore and replay both use that validator; the replay snapshot is frozen. A generation token rejects stale callbacks, and frames derive the current clip/tap directly from elapsed time. Only the active point receives a ring; playback never calls `tapSound.play()` or storage writes.
-- Manual code/security/docs audit found no remaining blocking issue. No new dependencies, external destinations or credentials. The worker precaches and verifies the replay and history-chart modules. Rendering reuses a cached chart image instead of sorting/redrawing all history each frame. README/changelog and the baseline recovery correction match the format 2/3 export rule and unreleased status.
+- Manual code/security/docs audit found no remaining blocking issue. No new dependencies, external destinations or credentials. The worker precaches and verifies the replay and history-chart modules. Rendering reuses a cached chart image instead of sorting/redrawing all history each frame. README/changelog and the baseline recovery correction match the format 2/3 export rule and the then-unreleased status.
 
 Physical checks remain pending on both iPhone 12 and iPhone 17 Pro Max: Safari and installed-app pulse visibility, toolbar/rotation and large text; VoiceOver replay labels/transitions/Stop; reduced-motion behavior; real background/lock cancellation; installed-app upgrade and offline reopening. Original tap accuracy and recording-audio acceptance remain as documented in the focused-counting plan.
 
@@ -165,3 +165,12 @@ Physical checks remain pending on both iPhone 12 and iPhone 17 Pro Max: Safari a
 
 - Root cause: `decode` in `scripts/lib/top-level-names.mjs` matched `\u` followed by any run of hex digits, so `respiratoryRate` decoded `0072e` as one escape and the name was lost, while the tokenizer already read exactly four digits. Fix: `\uXXXX` consumes exactly four hex digits and `\u{...}` the braced form, the same grammar as the tokenizer (the only other variable-width hex pattern, in the tokenizer's `escape`, was already exact). Test: `\uXXXX` followed by hex letters decodes to `respiratoryRate`/`abcd`, and that escaped declaration collides with a literal-name declaration, including on the real `data.mjs`/`history-chart.mjs`; the mutation (greedy decoder) fails it. Header comment now says escape and non-ASCII identifier handling is best-effort and shipped modules use ASCII names with no strict directive.
 - Close-out: the gauntlet closed here by owner choice after three confirming rounds on this test-only helper. `npm test` (107, was 106) and the browser harness (30 checks) pass. No `dist/` change, so no release or changelog entry.
+
+## Release verification — 14 November 2026
+
+The owner deployed 1.2.0 build `aa881e199dc7` to `https://pawbreath.com/`. Independent production verification matched release metadata, the service worker and all 12 precached assets byte-for-byte with the checkout. The last source-changing commit is `aea185a`; later gauntlet commits change tests and documentation.
+
+- Production Chromium profiles at 390×844 and 440×956 passed real 30-second touch counts, Undo, saved timing, full-duration newest-first replay, silent playback, stable layout, Stop focus, context filtering and form cancellation. JSON downloads retained exact offsets. Fresh worker installation and offline reload preserved the journal, guidance and replay. No page runtime errors occurred. Tests used isolated synthetic journals.
+- HTTP apex, HTTP www and HTTPS www returned 301 redirects to HTTPS apex, preserving the query string. `npm test` passed 107 tests, and the exact-source browser harness passed 30 checks.
+- These are Chromium emulations, not physical iPhone or installed-app upgrade acceptance. The physical checks listed above remain pending on both devices.
+- Gauntlet closure remains by owner choice after round 8; its ledger is non-terminal. Deployment does not convert that into formal convergence. PR #5 precedes PR #6 because #6 contains #5's commits; use regular merge commits and verify the final main tree against this deployed build.

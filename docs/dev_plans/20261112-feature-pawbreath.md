@@ -1,6 +1,6 @@
 # Pawbreath home-screen app
 
-**Status:** Deployed — 1.1.0 build `63316a30696f`; physical-device acceptance pending
+**Status:** Baseline deployed as 1.1.0; production now 1.2.0 build `aa881e199dc7`; physical-device acceptance pending
 **Component:** Pawbreath
 **Branch:** feature/mobile-layout-pass
 **Date:** 2026-11-12
@@ -50,6 +50,8 @@ flowchart LR
 - **2026-11-13:** Consolidated this plan to retain decisions and final evidence. Superseded permission failures, interim test counts and handoff logs remain in Git history: `git show c28de322c645577736b5c040b1c950d0ff8a3838:docs/dev_plans/20261112-feature-pawbreath.md`.
 
 - **2026-11-14 correction:** PRs #2–#4 are merged and build `63316a30696f` is live. The zero-inset layout evidence below did not establish tap safety with safe areas. The [iPhone counting follow-up](20261114-bug-iphone-counting-layout.md) replaces active sticky controls with normal flow and resolves the visible/accessibility label mismatch; idle Start remains sticky. Its code and desktop evidence are separate from this deployed baseline, and physical iPhone checks remain pending.
+
+- **2026-11-14 release correction:** The owner deployed 1.2.0 build `aa881e199dc7`, including focused counting and tap replay. Production assets and browser checks match the checkout. The [replay plan](20261114-feature-breath-timing-replay.md#release-verification--14-november-2026) owns current release evidence; the 1.1.0 results below remain historical. Physical acceptance is still pending.
 
 ## Verification and acceptance
 

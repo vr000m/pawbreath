@@ -1,6 +1,6 @@
 # Focused counting while watching the dog
 
-**Status:** Implemented and desktop-verified; physical acceptance pending
+**Status:** Released in 1.2.0 build `aa881e199dc7`; physical acceptance pending
 **Component:** Pawbreath
 **Assignee:** Codex
 **Priority:** High
@@ -60,7 +60,7 @@ Exactly one increment per accepted activation; no pointer/click double counting;
 - Offline app loads the audio helper and retains journal data. Sound failure leaves all recording behavior intact.
 - Docs distinguish current unshipped work, older deployed UI and pending physical acceptance. No deployment.
 
-<!-- reviewed: 2026-11-14 @ 6f8f10552e38850cd3849c64e6e6474cf3b7c48b -->
+<!-- reviewed: 2026-11-15 @ 6688051e8d0f77f41feddfed833d014dfaf7954a -->
 
 ## Progress
 
@@ -76,7 +76,7 @@ The reported device-specific cause remains unconfirmed; improving the target doe
 
 ## Final results — 14 November 2026
 
-Superseded intermediate build `6379aad6d342` of unreleased 1.2.0 (it reported version 1.1.0 at the time; after the 14 November decision below; previously `2338a7bf7184`). The current build is in `dist/release.json` and the breath-timing replay plan. A code-review fix removed unreachable `:has(.breath-circle.active)` CSS (the card lives in the dialog, outside `main`); `npm test` and the browser harness were re-run on this build, while the touch, screenshot and offline evidence below was gathered on `9116614af4b7`:
+Superseded intermediate build `6379aad6d342` during 1.2.0 development (it reported version 1.1.0 at the time; after the 14 November decision below; previously `2338a7bf7184`). The current build is in `dist/release.json` and the breath-timing replay plan. A code-review fix removed unreachable `:has(.breath-circle.active)` CSS (the card lives in the dialog, outside `main`); `npm test` and the browser harness were re-run on this build, while the touch, screenshot and offline evidence below was gathered on `9116614af4b7`:
 
 - Historical snapshot at that build: 72 Node tests (69 before the tap-sound decision added three; 71 before the review fix replaced three dead-CSS guards with one), metadata/syntax checks and `just deploy-check` pass. The generated helper digest is included in the worker's precache manifest.
 - Historical snapshot: 24 browser harness checks pass (23 before the tap-sound status check), including modal open failure, queued close events, Escape/zero/completed exits, focus restoration, delayed/rejected audio across session rollover, and the unchanged save/filter/export/update contracts.
@@ -98,3 +98,7 @@ Owner-approved follow-up on build `6379aad6d342`; layout, geometry, touch-action
 - **D4 copy.** The finished circle reads “13 / breaths counted” (“breath counted” for one); the active label and accessible name stay “Count one breath”. The instruction says “Tap the large area” instead of naming a colour.
 
 Unit tests cover resume-on-tap, recovery after interruption, suspend on stop, swallowed rejections and availability detection; the harness covers the status line with and without Web Audio, the post-count notice re-announcement, and the new copy. Reverting each fix makes its new test fail. Still unverified on a physical iPhone: audio recovery after a real interruption, VoiceOver announcing the notice after the count (the clear-and-restore technique is not device-tested), and audibility with device volume/mute.
+
+## Release correction — 14 November 2026
+
+This work shipped in 1.2.0 build `aa881e199dc7`. See the [replay release verification](20261114-feature-breath-timing-replay.md#release-verification--14-november-2026) for the deployed build and production checks. Earlier results above remain build-specific; physical Safari, installed-app, VoiceOver and sound acceptance remain pending.

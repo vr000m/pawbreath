@@ -1,6 +1,6 @@
 # iPhone counting layout and accessible controls
 
-**Status:** Implemented and desktop-verified; physical acceptance pending
+**Status:** Released in 1.2.0 build `aa881e199dc7`; physical acceptance pending
 **Component:** Pawbreath
 **Assignee:** Codex
 **Priority:** High
@@ -64,7 +64,7 @@ Layout invariants rather than new magic height thresholds; meaningful hit-tests;
 - README/changelog distinguish live baseline and local fix; prior plan points here without losing historical decisions.
 - A short physical iPhone checklist remains pending until the user performs it. That does not block completing the code change, but must not be marked verified.
 
-<!-- reviewed: 2026-11-14 @ 842b6f2fafde740a6ac76218153f40f4667c7f4c -->
+<!-- reviewed: 2026-11-15 @ 02115866059112210c38957de87f8393f3b8e192 -->
 
 ## Progress
 
@@ -76,7 +76,7 @@ Active controls now stay in normal flow below the circle at every phone height; 
 
 ## Verification — 14 November 2026
 
-Superseded intermediate build `02a944e1bc7a` of unreleased 1.2.0 (it reported version 1.1.0 at the time; the current build is in `dist/release.json`). Counts below are a historical snapshot at that build:
+Superseded intermediate build `02a944e1bc7a` during 1.2.0 development (it reported version 1.1.0 at the time; the current build is in `dist/release.json`). Counts below are a historical snapshot at that build:
 
 - `npm test` / `just deploy-check`: 68 tests pass, metadata/syntax checks pass, Wrangler dry run succeeds without deployment.
 - Browser harness: 21 checks pass. Geometry covers 19 viewport sizes × four bottom insets (0/20/34/48px), three scroll positions, target hit-testing and reachable actions. Four primary portrait/landscape profiles also exercise larger text and simulated top/side padding. Restoring sticky active controls reproduces the old overlap at 375×667 with inset 34px.
@@ -98,3 +98,7 @@ Desktop emulation cannot establish these results. Use the existing two-build upg
 ## Follow-up — 14 November 2026
 
 The [focused counting plan](20261114-feature-focused-counting.md) supersedes the active circular target with a wide modal surface for watching the dog while tapping. It retains the separation of target and controls, stable accessible name, idle sticky Start and pending physical acceptance. Earlier build/test evidence above remains historical; the follow-up owns current implementation evidence and the optional audio behavior.
+
+## Release correction — 14 November 2026
+
+This work shipped in 1.2.0 build `aa881e199dc7`. See the [replay release verification](20261114-feature-breath-timing-replay.md#release-verification--14-november-2026) for the deployed build and production checks. Earlier results above remain build-specific; physical Safari, installed-app, VoiceOver and sound acceptance remain pending.
