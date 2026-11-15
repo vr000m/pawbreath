@@ -1,25 +1,36 @@
 # Changelog
 
-User-visible changes are recorded here. Unreleased changes have not been deployed.
+User-visible changes are recorded here. Release dates record production deployment.
 
-## Unreleased
+## 1.2.0 — 14 November 2026
+
+Deployed build `aa881e199dc7`.
 
 ### Added
+
+- History can replay each new timed reading at its recorded tap rhythm, or play visible readings newest first, one at a time. Playback is silent and works offline, with a static timeline, Stop control and reduced-motion support. Old and manual readings remain untimed.
+
+- New timed readings retain individual accepted tap times in milliseconds. Backups stay format 2 until a reading has tap timing, so older app versions (1.1.0) can still restore them. A backup containing timing is format 3, which preserves it; older app versions reject format 3 backups, so do not roll back after recording timed readings. Restore imports formats 1, 2 and 3 without inventing timing.
 
 - Dedicated counting view with a large stationary target, separate Undo/Cancel controls and optional quiet tap sounds. Background navigation is unavailable during a count; Escape cancels it. Single-finger movement on the target no longer scrolls the page, while pinch zoom remains available.
 
 ### Fixed
 
+- The counting card keeps its bottom padding on short screens, and an update notice no longer flashes an empty box when a count ends.
+- History no longer jumps when a replay starts, advances or ends: the replaying reading is highlighted without reflowing its text, and the replay detail keeps its space.
 - Active Undo/Cancel controls stay below the counting target, including with bottom safe-area insets. Short screens can scroll outside the target without controls intercepting breath taps; idle Start stays pinned.
 - The breath button shows a stable “Count one breath” label matching its accessible name, with the count exposed separately.
-- Ticking Quiet tap sound now shows whether sound is actually available; if not, it says “Tap sound is not available on this device.” and unticks.
+- Ticking Quiet tap sound now shows whether sound is actually available; if not, it says “Tap sound is not available on this device.” and unticks. Cancelling or finishing a count while that check is still running no longer unticks the box or replaces the count’s message.
 - Tap sound recovers on the next taps after a call or other interruption during a count.
+- Tap sound stops cleanly when a count ends or Quiet tap sound is unticked: a tone cut off by the end of a count no longer resumes at the start of the next one, and unticking releases the audio.
 - An update notice that arrives during a count is announced to screen readers once the count ends.
+- A late tap at the end of a count can no longer press Save reading or Discard: the result card ignores input for about 0.6 seconds.
+- The “Keep this screen open while counting.” hint stays visible with the tap sound status. The status at Start now reads “Tap sound is on for this count.” because audio is not yet confirmed running.
 - The finished count reads “breaths counted” again, and the counting instruction says “Tap the large area” instead of naming a colour.
 
 ## Deployed build 63316a30696f — 14 November 2026
 
-These UI changes are live under version 1.1.0; no separate version bump was made.
+These UI changes were deployed under version 1.1.0; no separate version bump was made.
 
 ### Changed
 
@@ -28,7 +39,7 @@ These UI changes are live under version 1.1.0; no separate version bump was made
 - Export CSV moved from History to Settings, next to the backup buttons, because it exports every dog.
 - Tab bar uses drawn icons instead of text symbols, so they match on iPhone and Android.
 - On phones an update notice that arrives during a count stays hidden until the count ends, to keep the counting area compact; screen readers still announce it.
-- Short phone layouts hide optional duration/instruction controls during a count; very short layouts also hide the disabled dog picker. These changes alone did not prevent safe-area overlap, addressed under Unreleased above.
+- Short phone layouts hide optional duration/instruction controls during a count; very short layouts also hide the disabled dog picker. These changes alone did not prevent safe-area overlap, addressed in 1.2.0 above.
 - History's "Enter a reading" button moved from above the chart to the "Recorded moments" heading, beside the list it adds to; Measure still has "Enter a previous reading".
 - On wide screens the dog picker sits in the same place on Measure and History (left, under the heading), with the History period toggle beside it.
 - Dog pickers match the other dropdowns (white, 16px, same height), so they no longer look disabled. Every form control is now at least 16px, which stops iPhone zooming the page when one is tapped.

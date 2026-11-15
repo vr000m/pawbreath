@@ -689,6 +689,44 @@ h1 {
   color:#7d6657;
 }
 
+.replay-controls {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px 16px;
+  margin-top:12px;
+}
+
+.replay-reading {
+  display:block;
+  margin-top:6px;
+}
+
+/* Paint-only cue: the bar sits inside the row's 4px side padding, so text never reflows. */
+.reading-row.replaying {
+  box-shadow:inset 3px 0 #42745a;
+  background:rgba(66,116,90,.08);
+}
+
+/* Replay text and detail keep their space reserved so content below never jumps. */
+#replay-status, #replay-progress {
+  min-height:1.6em;
+}
+
+#replay-detail[aria-hidden="true"] {
+  visibility:hidden;
+}
+
+#tap-timeline {
+  display:block;
+  width:100%;
+  height:36px;
+}
+
+#replay-progress {
+  font-variant-numeric:tabular-nums;
+}
+
 .settings-grid {
   display:grid;
   grid-template-columns:1fr 1fr;
@@ -901,6 +939,8 @@ dialog label {
 #manual-timezone { overflow-wrap:anywhere; }
 #manual-entry { display:block; margin:0 auto; }
 .update-notice { padding:16px; border:1px solid currentColor; border-radius:12px; margin-bottom:24px; }
+/* announceUpdateNotice() empties the region briefly so screen readers re-announce it; keep that gap invisible. */
+.update-notice:empty { opacity:0; }
 #app-version, #published-version { overflow-wrap:anywhere; }
 .breathing-guide { border:1px solid #dce3d6; border-radius:16px; padding:18px; background:#fffefa; }
 .breathing-guide summary { cursor:pointer; font-weight:600; min-height:44px; display:list-item; align-content:center; }
@@ -961,7 +1001,10 @@ nav button[aria-current=page] svg .knob {
 }
 
 /* The active counter is a modal workspace: the page behind it cannot catch stray taps.
-   Dialog-specific selectors override responsive page rules; active controls never use the idle sticky bar. */
+   Dialog-specific selectors override responsive page rules; active controls never use the idle sticky bar.
+   This block sits above the phone block on purpose: its #counting-dialog selectors win by specificity, not source
+   order, so each phone rule for .counter-card, .breath-circle or .counter-controls that the dialog must not inherit
+   needs its own #counting-dialog override here. The phone-order guard in tests/structure.test.mjs does not check this. */
 #tap-sound-choice { justify-content:center; font-size:13px; }
 #counting-dialog {
   box-sizing:border-box;
@@ -981,8 +1024,8 @@ nav button[aria-current=page] svg .knob {
   display:flex;
   flex-direction:column;
   gap:12px;
+  /* min-height, not height: overflowing content must keep this card's bottom padding (the safe area) when scrolled to the end. */
   min-height:100%;
-  height:100%;
   border:0;
   border-radius:0;
   padding:calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));

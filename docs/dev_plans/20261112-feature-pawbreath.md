@@ -1,6 +1,6 @@
 # Pawbreath home-screen app
 
-**Status:** Deployed — 1.1.0 build `63316a30696f`; physical-device acceptance pending
+**Status:** Baseline deployed as 1.1.0; production now 1.2.0 build `aa881e199dc7`; physical-device acceptance pending
 **Component:** Pawbreath
 **Branch:** feature/mobile-layout-pass
 **Date:** 2026-11-12
@@ -14,12 +14,13 @@ A static HTML/CSS/JavaScript app with device-local IndexedDB storage. No third-p
 | Files | Responsibility |
 | --- | --- |
 | `dist/index.html`, `app.css`, `app.js` | Profiles/photos, counter, manual-entry forms, guidance, History and Settings |
-| `dist/data.mjs` | Validation, transactional storage, CSV and JSON backup/restore, `CONTEXT_LABELS`, `withReadingDefaults`, `defaultDogId` and `manualDialogAction` |
+| `dist/replay.mjs`, `history-chart.mjs`, `tap-sound.mjs` | Replay timing controller; History chart drawing, point hit-testing and replay ring/timeline; quiet tap sound |
+| `dist/data.mjs` | Validation, transactional storage, CSV and JSON backup/restore (`NEWEST_READABLE_VERSION`), `CONTEXT_LABELS`, `withReadingDefaults`, `defaultDogId`, `newestFirst` (the one reading order) and `manualDialogAction` |
 | `dist/updates.mjs`, `sw.js` | Update status and scoped offline shell; no journal writes |
 | `scripts/release.mjs`, `scripts/lib/precache-assets.mjs`, `dist/version.mjs`, `dist/release.json` | Deterministic app release/build identity; published metadata is network-only |
 | `dist/manifest.webmanifest`, icons | Home-screen installation |
 | `wrangler.jsonc`, `dist/_headers`, `scripts/cloudflare.sh`, `justfile` | Hosting, security headers, external credentials and deployment checks |
-| `tests/` | Data/worker/update/deployment tests, `manual-dialog.test.mjs`, `structure.test.mjs` (including the phone-layout and 16px-control checks, and the single phone-block, wide-screen complement and source-order guards) and browser harness |
+| `tests/` | Data/worker/update/deployment tests, `manual-dialog.test.mjs`, `replay.test.mjs`, `history-chart.test.mjs`, `tap-sound.test.mjs`, `structure.test.mjs` (module import/precache checks over the derived module set) (including the phone-layout and 16px-control checks, and the single phone-block, wide-screen complement and source-order guards) and browser harness |
 
 ```mermaid
 flowchart LR
@@ -35,7 +36,7 @@ flowchart LR
 - **Context and guidance:** record asleep/resting/restless/not-recorded and optional uncertainty. Never infer legacy context from notes. General guidance never fills the optional vet threshold or labels a result safe/normal. No breed, weight, sex or neuter adjustment is applied. Guidance is cached; linked sources require internet access.
 - **History:** chart and list share date/context filters; uncertain readings stay labelled. Timed/manual saves clear incompatible filters. History has no export control: CSV and JSON (backup) export are in Settings and retain all dogs/readings.
 - **Persistence:** IndexedDB `pawbreath`, schema 1, with `dogs` and `readings` stores keyed by ID. Confirm saves only after transaction commit; retain failed results/drafts and stable IDs for retry. Concurrent tabs must preserve distinct writes. Dirty manual dialogs require Save/Discard and retain drafts after repeated Escape. Profile photos are resized; user text renders literally. Reading deletion requires confirmation. The last-chosen dog ID is remembered in `localStorage` (key `pawbreath.dog`) as a per-browser convenience only: reads and writes are wrapped in try/catch, a missing or stale ID falls back to the dog with the most recent reading, else the first dog, and no reading data is ever stored there.
-- **Recovery:** backup format 2 accepts format 1 imports, normalizing old records without guessing context. Old apps reject format 2. Validate a complete backup before one atomic, additive restore; existing IDs win. Export and import accept the same valid snapshot domain without aggregate count/byte caps, subject to browser resources. CSV neutralizes formula prefixes and offers best-effort rows for invalid stored records.
+- **Recovery:** backup format 2 accepts format 1 imports, normalizing old records without guessing context. Old apps reject format 2. (Superseded for 1.2.0 by the 2026-11-14 sections at the end of this plan: import accepts formats 1 to 3; exports write format 3 only when a reading carries tap timing, otherwise format 2, which 1.1.0 can restore.) Validate a complete backup before one atomic, additive restore; existing IDs win. Export and import accept the same valid snapshot domain without aggregate count/byte caps, subject to browser resources. CSV neutralizes formula prefixes and offers best-effort rows for invalid stored records.
 - **Updates:** package version plus generated build hash identifies the running app, published metadata and shell cache. Hash deployed source recursively, excluding dotfiles/generated identity. Check metadata in tests; at install the worker rejects a `version.mjs` carrying a different build and verifies every precached shell file's SHA-256 against the generated `DIGESTS` manifest in `sw.js`; any mismatch aborts installation and caches nothing, so the host must serve shell files byte-for-byte. Cache the scope root, not redirected `index.html`. No `skipWaiting` or forced reload: activate after all clients close, remove only obsolete Pawbreath caches, never touch journal storage. Save before intentionally closing; drafts are not durable across shutdown.
 - **Update status:** check on launch, reconnect and resume (resume throttled to one minute), using uncached published metadata and `updateViaCache: none`. Offline/failed checks never claim freshness; optional last-check storage failures cannot block the app.
 - **Deployment:** require clean tracked `dist/` and successful JSON authentication before publishing. Credentials remain external; the app needs none. Same-origin CSP allows data/blob profile images, blocks framing and MIME sniffing. Wrangler owns the apex association; dashboard-managed HTTP/`www` redirects remain separate.
@@ -49,6 +50,8 @@ flowchart LR
 - **2026-11-13:** Consolidated this plan to retain decisions and final evidence. Superseded permission failures, interim test counts and handoff logs remain in Git history: `git show c28de322c645577736b5c040b1c950d0ff8a3838:docs/dev_plans/20261112-feature-pawbreath.md`.
 
 - **2026-11-14 correction:** PRs #2–#4 are merged and build `63316a30696f` is live. The zero-inset layout evidence below did not establish tap safety with safe areas. The [iPhone counting follow-up](20261114-bug-iphone-counting-layout.md) replaces active sticky controls with normal flow and resolves the visible/accessibility label mismatch; idle Start remains sticky. Its code and desktop evidence are separate from this deployed baseline, and physical iPhone checks remain pending.
+
+- **2026-11-14 release correction:** The owner deployed 1.2.0 build `aa881e199dc7`, including focused counting and tap replay. Production assets and browser checks match the checkout. The [replay plan](20261114-feature-breath-timing-replay.md#release-verification--14-november-2026) owns current release evidence; the 1.1.0 results below remain historical. Physical acceptance is still pending.
 
 ## Verification and acceptance
 
@@ -77,3 +80,11 @@ The original verification run did not deploy; the dated correction above records
 Shared household access and automatic recovery need a separate design. The direction is local IndexedDB plus a durable upload queue, authenticated Worker API, D1 shared records and private R2 photos/backups. Preserve stable client IDs and server-verified authorship; use revisions, deletion markers and a server-ordered change cursor rather than device clocks alone. Migration requires explicit household mapping; retain local-only use and distinguish local saves from server acknowledgement. Independent retained backups and tested restore are required alongside sync. Authentication, retention and permissions remain undecided; no such resources are created here.
 
 Vet reports, reading corrections/profile archiving, household reminders and external historical imports remain outside this release. Camera detection and medication scheduling are deferred.
+
+### 2026-11-14 timing compatibility correction
+
+The [recorded tap replay plan](20261114-feature-breath-timing-replay.md) supersedes the format-2 recovery decision: exports containing timing use format 3 and preserve optional millisecond offsets; formats 1/2 import without timing. IndexedDB remains schema 1. Old apps can strip timing during export, so rollback after new recordings is unsupported.
+
+### 2026-11-14 owner decision: lowest export format
+
+Narrowing "exports containing timing use format 3" above: a backup is format 2 when no reading carries tap timing, so installs on 1.1.0 can still restore it, and format 3 only when at least one reading does. Import accepts formats 1, 2 and 3; v1/v2 files carrying timing are rejected. See the [replay plan](20261114-feature-breath-timing-replay.md), round 3 part 2.

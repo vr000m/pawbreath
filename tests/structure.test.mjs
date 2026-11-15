@@ -5,14 +5,35 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseAssets } from '../scripts/lib/precache-assets.mjs';
+import { staticImports, reachableModules } from '../scripts/lib/import-graph.mjs';
 
 const dist = new URL('../dist/', import.meta.url);
 const read = name => readFileSync(new URL(name, dist), 'utf8');
-const staticImports = source => [...source.matchAll(/^import\s+(?:\{([^}]*)\}\s+from\s+)?'(\.\/[^']+)';?$/gm)]
-  .map(([, names = '', path]) => ({ path, names: names.split(',').map(name => name.trim().split(/\s+as\s+/)[0]).filter(Boolean) }));
+
+// The shell's module graph, derived rather than listed: everything index.html and the manifest load, plus every
+// module reachable through static imports. A new module joins every check below without editing a list.
+function shellGraph() {
+  const html = read('index.html');
+  const needed = new Set(['./']);
+  for (const [, path] of html.matchAll(/<(?:script|link)\b[^>]*(?:src|href)="(\.\/[^"#]+)"/g)) needed.add(path);
+  for (const [, path] of html.matchAll(/<img\b[^>]*src="(\.\/[^"#]+)"/g)) needed.add(path);
+  for (const icon of JSON.parse(read('manifest.webmanifest')).icons) needed.add(new URL(icon.src, 'https://x.test/').pathname.replace(/^\//, './'));
+  for (const path of reachableModules(read, [...needed].filter(path => /\.m?js$/.test(path)))) needed.add(path);
+  return needed;
+}
+const isModule = path => /\.m?js$/.test(path);
+// Every module the shell loads or the worker precaches (sw.js itself is the worker, not a shell module).
+function shellModules() {
+  return [...new Set([...shellGraph(), ...parseAssets(read('sw.js'))])].filter(isModule).map(path => path.slice(2));
+}
 
 test('every name a module imports is exported by the imported module', async () => {
-  for (const name of ['app.js', 'data.mjs', 'updates.mjs']) {
+  const modules = shellModules();
+  // A floor, so the derivation can never become vacuous; the loop below covers whatever is derived.
+  for (const name of ['app.js', 'data.mjs', 'updates.mjs', 'tap-sound.mjs', 'replay.mjs', 'history-chart.mjs', 'version.mjs']) {
+    assert.ok(modules.includes(name), `${name} missing from the derived module set`);
+  }
+  for (const name of modules) {
     for (const { path, names } of staticImports(read(name))) {
       const module = await import(new URL(path, dist));
       for (const imported of names) assert.ok(imported in module, `${name} imports ${imported} from ${path}, which does not export it`);
@@ -20,24 +41,51 @@ test('every name a module imports is exported by the imported module', async () 
   }
 });
 
-test('the precache list contains every module, stylesheet, manifest and icon the shell loads', () => {
-  const worker = read('sw.js');
-  const assets = parseAssets(worker);
-  const html = read('index.html');
-  const needed = new Set(['./']);
-  for (const [, path] of html.matchAll(/<(?:script|link)\b[^>]*(?:src|href)="(\.\/[^"#]+)"/g)) needed.add(path);
-  for (const [, path] of html.matchAll(/<img\b[^>]*src="(\.\/[^"#]+)"/g)) needed.add(path);
-  for (const icon of JSON.parse(read('manifest.webmanifest')).icons) needed.add(new URL(icon.src, 'https://x.test/').pathname.replace(/^\//, './'));
-  const queue = [...needed].filter(path => /\.m?js$/.test(path));
-  while (queue.length) {
-    for (const { path } of staticImports(read(queue.shift()))) {
-      if (!needed.has(path)) { needed.add(path); queue.push(path); }
-    }
+// The replay controller is the one record of whether playback runs; the chart module only paints frames.
+// tests/replay.test.mjs covers replay.active; this keeps app.js from deciding activity by reading chart state.
+test('app.js decides replay activity from the controller, not from the chart module', () => {
+  const app = read('app.js');
+  assert.ok(!/historyChart\.replay\b/.test(app), 'app.js reads historyChart.replay');
+  assert.ok(/replay\.active\b/.test(app), 'app.js must ask the replay controller whether playback is active');
+});
+
+// The result card ignores input just after a count ends. The browser harness proves the behaviour; this keeps the
+// delay a single named constant, the only place that sets `inert` on #result, and cleared by every exit that removes the card.
+test('app.js guards the result card with one named delay and clears it on reset and Start', () => {
+  const app = read('app.js');
+  const delay = app.match(/^const resultGuardMs = (\d+);$/m);
+  assert.ok(delay && Number(delay[1]) >= 400 && Number(delay[1]) <= 1000, 'resultGuardMs must be one named constant of about 600 ms');
+  assert.equal(app.match(/, resultGuardMs\)/g)?.length, 1, 'the guard timer must use resultGuardMs once');
+  assert.equal(app.match(/\$\('#result'\)\.inert = true/g)?.length, 1, 'only guardResult makes #result inert');
+  const body = name => app.slice(app.indexOf(`function ${name}(`)).split(/\n}\n/)[0];
+  for (const name of ['resetCounter', 'completeCount']) assert.ok(/\b(clearResultGuard|guardResult)\(\)/.test(body(name)), `${name} must arm or clear the result guard`);
+  assert.ok(app.slice(app.indexOf("$('#start').onclick")).split(/\n};\n/)[0].includes('clearResultGuard()'), 'Start must clear the result guard');
+});
+
+// The chart only records and paints frames. app.js decides when the replaying reading changed (status, row, Stop,
+// timeline) from the frame itself; the browser harness checks those updates fire once per reading.
+test('app.js calls historyChart.setReplay only as a statement and never uses its result', () => {
+  const calls = read('app.js').split('\n').filter(line => line.includes('historyChart.setReplay('));
+  assert.ok(calls.length >= 2, 'app.js must set and clear the chart replay frame');
+  for (const line of calls) assert.match(line, /^\s*historyChart\.setReplay\([^;]*\);\s*$/, `app.js uses the setReplay result: ${line.trim()}`);
+});
+
+// The History list and the replay queue share one reading order, owned by data.mjs with the other reading rules.
+// This only checks the import. Use is checked by tests/replay.test.mjs (replay queue in newestFirst order) and by the
+// browser harness (History list order equals replay order).
+test('app.js, replay.mjs and history-chart.mjs take the reading order from data.mjs', () => {
+  for (const name of ['app.js', 'replay.mjs', 'history-chart.mjs']) {
+    assert.ok(staticImports(read(name)).some(({ path, names }) => path === './data.mjs' && names.includes('newestFirst')),
+      `${name} must import newestFirst from data.mjs`);
   }
-  for (const module of ['./app.js', './data.mjs', './updates.mjs', './version.mjs', './app.css', './manifest.webmanifest']) {
-    assert.ok(needed.has(module), `${module} was not discovered`);
-  }
+});
+
+test('the precache list contains exactly the modules, stylesheet, manifest and icons the shell loads', () => {
+  const assets = parseAssets(read('sw.js'));
+  const needed = shellGraph();
   for (const path of needed) assert.ok(assets.includes(path), `${path} is loaded by the shell but not precached`);
+  // The reverse direction: a precached module the shell never imports is dead weight, or an import that was lost.
+  for (const path of assets) assert.ok(needed.has(path), `${path} is precached but the shell never loads it`);
 });
 
 test('the browser harness builds only when every source substitution applies', () => {
@@ -193,6 +241,8 @@ test('form controls are at least 16px so iOS Safari does not zoom the page on fo
 });
 
 // Why a block after the phone block could override one of its values by source order, as messages ([] when none).
+// Source order only: a higher-specificity rule anywhere (the #counting-dialog block above the phone block) still
+// overrides phone values, and this guard does not see it. Those overrides are deliberate; see the note in app.css.
 // A block after it may only be: a media block capped at 600px or less (the height-gated short-phone blocks), the
 // wide-screen complement `not all and (max-width:600px)` (the only complement spelling accepted), or above 600px
 // only. A width-agnostic block (display-mode, motion) may follow if it styles nothing the phone block styles.
@@ -292,4 +342,8 @@ test('the active counter is styled from #counting-dialog, never from a page ance
   assert.ok(!/:has\(\s*\.breath-circle\.active\s*\)/.test(stripComments(css)), 'no rule may depend on .breath-circle.active being inside a page ancestor');
   const dialog = rules(css).find(({ selectors }) => selectors.includes('#counting-dialog .counter-controls'));
   assert.ok(dialog && /position:\s*static/.test(dialog.body), 'active Undo/Cancel stay in normal flow below the target, never sticky');
+  const card = rules(css).find(({ selectors }) => selectors.includes('#counting-dialog .counter-card'));
+  // A fixed height would let overflowing content spill past the card and drop its safe-area bottom padding.
+  assert.ok(card && /min-height:\s*100%/.test(card.body) && !/(?:^|[;\s])height:\s*100%/.test(card.body), 'the dialog card grows with its content (min-height only)');
+  assert.ok(/\.update-notice:empty\s*\{[^}]*opacity:\s*0/.test(stripComments(css)), 'an emptied update notice stays invisible while it is re-announced');
 });

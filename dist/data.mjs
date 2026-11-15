@@ -1,5 +1,13 @@
 export const FORMAT = 'pawbreath';
-export const VERSION = 2;
+// The newest backup format this app reads; it accepts every format from 1 up to it. Exports do not write this
+// number: they write the lowest format able to represent the snapshot (UNTIMED_VERSION or TIMING_VERSION).
+export const NEWEST_READABLE_VERSION = 3;
+export const READABLE_VERSIONS = Object.freeze(Array.from({ length: NEWEST_READABLE_VERSION }, (_, i) => i + 1));
+const readableList = `${READABLE_VERSIONS.slice(0, -1).join(', ')} or ${READABLE_VERSIONS.at(-1)}`;
+// The first backup format that may carry recorded tap timing. Later formats keep accepting it.
+export const TIMING_VERSION = 3;
+// Readings without tap timing fit format 2, which apps on 1.1.0 can still restore.
+const UNTIMED_VERSION = 2;
 // The single definition of measurement contexts. `label` is the form option, `filter` the History
 // filter option and `short` the History/latest-reading description. Order is the form order.
 export const CONTEXT_LABELS = Object.freeze({
@@ -16,6 +24,12 @@ export function withReadingDefaults(reading) {
   return { ...reading, source: reading.source === undefined ? 'timed' : reading.source,
     context: reading.context === undefined ? 'not-recorded' : reading.context,
     uncertain: reading.uncertain === undefined ? false : reading.uncertain };
+}
+
+// The one reading order, shared by the History list and the replay queue: newest first, then id by
+// UTF-16 code unit (not locale), so ties never depend on the device.
+export function newestFirst(a, b) {
+  return b.date.localeCompare(a.date) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 
 // Which dog to open: the one chosen last if it still exists, else the dog with the newest reading
@@ -79,8 +93,20 @@ export function validateReading(reading) {
       'Enter a positive breathing rate with at most one decimal place (maximum 300).');
   }
   requireValue(typeof reading.notes === 'string' && reading.notes.length <= 2000, 'Notes must contain at most 2,000 characters.');
+  let timing = {};
+  if ('tapOffsetsMs' in reading) {
+    const offsets = reading.tapOffsetsMs;
+    requireValue(source === 'timed' && Array.isArray(offsets) && offsets.length === reading.count,
+      'Recorded tap timing must match a timed breath count.');
+    for (let i = 0; i < offsets.length; i++) {
+      requireValue(Object.hasOwn(offsets, i) && Number.isInteger(offsets[i]) && offsets[i] >= 0 &&
+        offsets[i] < reading.seconds * 1000 && (i === 0 || offsets[i] >= offsets[i - 1]),
+      'Recorded tap timing must be ordered milliseconds within the measurement.');
+    }
+    timing = { tapOffsetsMs: [...offsets] };
+  }
   return { id: reading.id, dogId: reading.dogId, date: reading.date, count: reading.count,
-    seconds: reading.seconds, rate: reading.rate, notes: reading.notes, source, context, uncertain };
+    seconds: reading.seconds, rate: reading.rate, notes: reading.notes, source, context, uncertain, ...timing };
 }
 
 // datetime-local is interpreted in this device's time zone; reject normalization of
@@ -116,21 +142,28 @@ export function manualDialogAction({ event, dirty, cancelable = false, confirmOp
 }
 
 export function validateBackup(input) {
-  requireValue(input && input.format === FORMAT && [1, VERSION].includes(input.version),
-    'Choose a Pawbreath version 1 or 2 backup (.json).');
+  requireValue(input && input.format === FORMAT && READABLE_VERSIONS.includes(input.version),
+    `Choose a Pawbreath version ${readableList} backup (.json).`);
   requireValue(Array.isArray(input.dogs) && Array.isArray(input.readings), 'This backup is incomplete.');
   const dogs = input.dogs.map(validateDog);
-  const readings = input.readings.map(validateReading);
+  const readings = input.readings.map(reading => {
+    requireValue(input.version >= TIMING_VERSION || !reading || !('tapOffsetsMs' in Object(reading)),
+      `Recorded tap timing requires a version ${TIMING_VERSION} backup.`);
+    return validateReading(reading);
+  });
   const dogIds = new Set(dogs.map(dog => dog.id));
   requireValue(dogIds.size === dogs.length, 'This backup contains duplicate dog IDs.');
   requireValue(new Set(readings.map(reading => reading.id)).size === readings.length,
     'This backup contains duplicate reading IDs.');
   requireValue(readings.every(reading => dogIds.has(reading.dogId)), 'A reading is missing its dog profile.');
-  return { format: FORMAT, version: VERSION, dogs, readings };
+  // The lowest format that holds these readings, so makeBackup writes it and validating an export reproduces it.
+  const version = readings.some(reading => 'tapOffsetsMs' in reading) ? TIMING_VERSION : UNTIMED_VERSION;
+  return { format: FORMAT, version, dogs, readings };
 }
 
+// Validates as the newest readable format, then writes the version validateBackup chose (2 or 3).
 export function makeBackup(snapshot) {
-  return { ...validateBackup({ format: FORMAT, version: VERSION, ...snapshot }), exportedAt: new Date().toISOString() };
+  return { ...validateBackup({ ...snapshot, format: FORMAT, version: NEWEST_READABLE_VERSION }), exportedAt: new Date().toISOString() };
 }
 
 export async function readBackupFile(file) {

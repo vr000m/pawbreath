@@ -2,6 +2,9 @@
 export function createTapSound(AudioContextClass) {
   let context;
   let enabled = false;
+  // Tones that may still sound, each as { stop, disconnect }. stop() must silence these: suspending alone
+  // freezes them, and the next resume plays the rest.
+  const tones = new Set();
   // Request a resume without waiting for it. Rejections and throws are ignored: audio is never essential.
   const resume = () => {
     try { Promise.resolve(context.resume()).catch(() => {}); } catch { /* Audio must never prevent a measurement. */ }
@@ -30,7 +33,10 @@ export function createTapSound(AudioContextClass) {
       // is a user gesture, so ask to resume; this tap stays silent, later taps sound once it runs.
       if (context.state !== 'running') { resume(); return false; }
       let oscillator, gain;
-      const disconnect = () => { oscillator?.disconnect(); gain?.disconnect(); };
+      const tone = {
+        stop() { try { oscillator?.stop(); } catch { /* Not started, or already stopped. */ } },
+        disconnect() { tones.delete(tone); oscillator?.disconnect(); gain?.disconnect(); }
+      };
       try {
         oscillator = context.createOscillator();
         gain = context.createGain();
@@ -41,19 +47,25 @@ export function createTapSound(AudioContextClass) {
         gain.gain.linearRampToValueAtTime(0, now + 0.045);
         oscillator.connect(gain);
         gain.connect(context.destination);
-        oscillator.onended = disconnect;
+        oscillator.onended = tone.disconnect;
+        tones.add(tone);
         oscillator.start(now);
         oscillator.stop(now + 0.05);
         return true;
       } catch {
-        try { oscillator?.stop(); } catch { /* May not have started. */ }
-        try { disconnect(); } catch { /* Best-effort audio cleanup. */ }
+        tone.stop();
+        try { tone.disconnect(); } catch { /* Best-effort audio cleanup. */ }
         return false;
       }
     },
-    // Suspend rather than close, so the next count can reuse the same context.
+    // Silence every tone, then suspend rather than close, so the next count reuses the context with nothing left to play.
+    // Idempotent: count end, cancel and unticking may each call it.
     stop() {
       enabled = false;
+      for (const tone of [...tones]) {
+        tone.stop();
+        try { tone.disconnect(); } catch { /* Best-effort audio cleanup. */ }
+      }
       // Also suspends after a resume that is still pending, so the context does not run on unused.
       if (!context || context.state === 'closed') return;
       try { Promise.resolve(context.suspend()).catch(() => {}); } catch { /* Best-effort. */ }

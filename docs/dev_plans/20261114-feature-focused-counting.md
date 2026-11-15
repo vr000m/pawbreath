@@ -1,6 +1,6 @@
 # Focused counting while watching the dog
 
-**Status:** Implemented and desktop-verified; physical acceptance pending
+**Status:** Released in 1.2.0 build `aa881e199dc7`; physical acceptance pending
 **Component:** Pawbreath
 **Assignee:** Codex
 **Priority:** High
@@ -60,7 +60,7 @@ Exactly one increment per accepted activation; no pointer/click double counting;
 - Offline app loads the audio helper and retains journal data. Sound failure leaves all recording behavior intact.
 - Docs distinguish current unshipped work, older deployed UI and pending physical acceptance. No deployment.
 
-<!-- reviewed: 2026-11-14 @ 6f8f10552e38850cd3849c64e6e6474cf3b7c48b -->
+<!-- reviewed: 2026-11-15 @ 6688051e8d0f77f41feddfed833d014dfaf7954a -->
 
 ## Progress
 
@@ -76,10 +76,10 @@ The reported device-specific cause remains unconfirmed; improving the target doe
 
 ## Final results — 14 November 2026
 
-Version 1.1.0 build `6379aad6d342` (after the 14 November decision below; previously `2338a7bf7184`). A code-review fix removed unreachable `:has(.breath-circle.active)` CSS (the card lives in the dialog, outside `main`); `npm test` and the browser harness were re-run on this build, while the touch, screenshot and offline evidence below was gathered on `9116614af4b7`:
+Superseded intermediate build `6379aad6d342` during 1.2.0 development (it reported version 1.1.0 at the time; after the 14 November decision below; previously `2338a7bf7184`). The current build is in `dist/release.json` and the breath-timing replay plan. A code-review fix removed unreachable `:has(.breath-circle.active)` CSS (the card lives in the dialog, outside `main`); `npm test` and the browser harness were re-run on this build, while the touch, screenshot and offline evidence below was gathered on `9116614af4b7`:
 
-- 72 Node tests (69 before the tap-sound decision added three; 71 before the review fix replaced three dead-CSS guards with one), metadata/syntax checks and `just deploy-check` pass. The generated helper digest is included in the worker's precache manifest.
-- 24 browser harness checks pass (23 before the tap-sound status check), including modal open failure, queued close events, Escape/zero/completed exits, focus restoration, delayed/rejected audio across session rollover, and the unchanged save/filter/export/update contracts.
+- Historical snapshot at that build: 72 Node tests (69 before the tap-sound decision added three; 71 before the review fix replaced three dead-CSS guards with one), metadata/syntax checks and `just deploy-check` pass. The generated helper digest is included in the worker's precache manifest.
+- Historical snapshot: 24 browser harness checks pass (23 before the tap-sound status check), including modal open failure, queued close events, Escape/zero/completed exits, focus restoration, delayed/rejected audio across session rollover, and the unchanged save/filter/export/update contracts.
 - Geometry covers 19 sizes × four bottom insets, scroll positions and a grid of 15 target points. Target dimensions stay stable across 9/10/99/100 counts. Both primary portrait layouts show target and controls together; larger-text/top-side-padding and landscape cases remain reachable. A mutation shrinking the target to its former width fails the width invariant.
 - Real Chromium touch sessions at 390×844 and 440×956 pass 8px drift, cancelled touch, held touch, eight rapid taps, held Enter/Space, Undo, modal focus, landscape and Escape. Screenshots inspected. Audio graphs request one oscillator per accepted click when enabled, none for Undo or opt-out. This verifies scheduling, not audible output.
 - Fresh service-worker installation and offline reopening pass for both profiles, retaining the saved manual reading and guidance; counting also works offline. No new two-build upgrade test was run; prior upgrade evidence remains in the baseline plan.
@@ -92,8 +92,14 @@ Physical acceptance remains pending **on both iPhone 12 and iPhone 17 Pro Max**:
 Owner-approved follow-up on build `6379aad6d342`; layout, geometry, touch-action and dialog cancel handling are unchanged.
 
 - **D1 audio recovery.** An accepted tap on a context that is not `running` (suspended, or iOS `interrupted` after a call, Siri or Control Center) requests `resume()` without awaiting it; that tap may stay silent and later taps sound once the context runs. Rejections and throws are swallowed. Ending or cancelling a count suspends the context (not closed, so the next count reuses it). Still one tone per accepted click and none after stop.
-- **D2 truthful status.** Ticking **Quiet tap sound** is a user gesture: it creates/resumes the context and the status line shows “Tap sound on…” only when the context runs, otherwise “Tap sound is not available on this device.” Unavailable audio unticks the box, so the checkbox always matches whether counts will try to sound; counting is unaffected. Start still prepares audio in its own gesture without awaiting.
+  - *Note, 14 November 2026:* `stop()` now also stops and disconnects every tone still playing, and unticking **Quiet tap sound** calls it to release audio. See “Review-gauntlet round 1” in [the replay plan](20261114-feature-breath-timing-replay.md).
+- **D2 truthful status.** Ticking **Quiet tap sound** is a user gesture: it creates/resumes the context and the status line shows “Tap sound on…” only when the context runs at that check, otherwise “Tap sound is not available on this device.” Unavailable audio unticks the box, so the checkbox always matches whether counts will try to sound; counting is unaffected. Start still prepares audio in its own gesture without awaiting.
+  - *Note, 14 November 2026 (owner-approved):* Start shows “Tap sound is on for this count. Keep this screen open while counting.” (sound status first, then the hint; “Tap sound is not available on this device.” likewise if a check settles mid-count). Start's line comes from the checkbox alone, before audio is confirmed running, so it claims only the intent; “Tap sound on…” stays the wording of the idle line after the tick's check. See “Owner-approved open-item fixes” in [the replay plan](20261114-feature-breath-timing-replay.md).
 - **D3 update notice.** A notice that arrives during a count sits in content made inert by the modal. When the counting view closes (completion, Cancel, Escape, background), a visible notice's text is cleared and restored 100 ms later so its `role=status` region announces it once.
 - **D4 copy.** The finished circle reads “13 / breaths counted” (“breath counted” for one); the active label and accessible name stay “Count one breath”. The instruction says “Tap the large area” instead of naming a colour.
 
 Unit tests cover resume-on-tap, recovery after interruption, suspend on stop, swallowed rejections and availability detection; the harness covers the status line with and without Web Audio, the post-count notice re-announcement, and the new copy. Reverting each fix makes its new test fail. Still unverified on a physical iPhone: audio recovery after a real interruption, VoiceOver announcing the notice after the count (the clear-and-restore technique is not device-tested), and audibility with device volume/mute.
+
+## Release correction — 14 November 2026
+
+This work shipped in 1.2.0 build `aa881e199dc7`. See the [replay release verification](20261114-feature-breath-timing-replay.md#release-verification--14-november-2026) for the deployed build and production checks. Earlier results above remain build-specific; physical Safari, installed-app, VoiceOver and sound acceptance remain pending.

@@ -3,6 +3,8 @@
 // Service-worker installation requires a separately served HTTPS/localhost test.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { reachableModules } from '../scripts/lib/import-graph.mjs';
+import { assertNoTopLevelCollisions } from '../scripts/lib/top-level-names.mjs';
 
 const dist = new URL('../dist/', import.meta.url);
 // Every substitution must apply. A silently skipped replace would test an app that does not exist.
@@ -22,6 +24,12 @@ app = replaced(app, 'const updates = createUpdateMonitor({ storage: updateStorag
 app = replaced(app, '  prepareOffline();', "  $('#cache-status').textContent = 'Offline installation is excluded from the file-based test harness.';");
 app = replaced(app, "import { createTapSound } from './tap-sound.mjs';\n", '');
 const tapSoundSource = replaced(readFileSync(new URL('tap-sound.mjs', dist), 'utf8'), 'export ', '', true);
+app = replaced(app, "import { createReplayController, replayableReadings } from './replay.mjs';\n", '');
+const replaySource = replaced(replaced(readFileSync(new URL('replay.mjs', dist), 'utf8'),
+  "import { newestFirst, validateReading } from './data.mjs';\n", ''), 'export ', '', true);
+app = replaced(app, "import { createHistoryChart } from './history-chart.mjs';\n", '');
+const historyChartSource = replaced(replaced(readFileSync(new URL('history-chart.mjs', dist), 'utf8'),
+  "import { newestFirst } from './data.mjs';\n", ''), 'export ', '', true);
 const checks = `
 const output = document.createElement('pre');
 output.id = 'test-results';
@@ -84,7 +92,9 @@ await check('The breath action keeps its visible name and exposes the count thro
   $('#cancel').click(); verify('Ready');
   $('#start').click(); $('#breath-button').click();
   fakeNow = 30000; tick(); verify('1', 'breath counted');
-  assert(!countingDialog.open && document.activeElement === $('#save-reading'), 'Completion did not restore result focus');
+  assert(!countingDialog.open && $('#result').inert && !$('#result').hidden, 'Completion did not show the guarded result');
+  await sleep(resultGuardMs + 100);
+  assert(!$('#result').inert && document.activeElement === $('#save-reading'), 'Result focus not restored once the late-tap guard ends');
   const discard = $('#discard').onclick(); $('#confirm-yes').click(); await discard;
   verify('Ready');
   fakeNow = 0; $('#start').click(); for (let i = 0; i < 13; i++) $('#breath-button').click();
@@ -103,10 +113,10 @@ await check('Counting dialog restores the card on every exit and isolates later 
   for (const key of ['Enter',' ']) {
     const repeat = new KeyboardEvent('keydown', {key,repeat:true,cancelable:true});
     $('#breath-button').dispatchEvent(repeat);
-    assert(repeat.defaultPrevented && session.count===0, 'Held key repeated a count');
+    assert(repeat.defaultPrevented && session.tapOffsetsMs.length===0, 'Held key repeated a count');
   }
   for (const type of ['pointerdown','pointercancel','pointerup']) $('#breath-button').dispatchEvent(new PointerEvent(type, {pointerId:1,pointerType:'touch'}));
-  assert(session.count===0, 'Raw/cancelled pointer sequence changed the count');
+  assert(session.tapOffsetsMs.length===0, 'Raw/cancelled pointer sequence changed the count');
   countingDialog.dispatchEvent(new Event('cancel', {cancelable:true})); restored();
   assert(document.activeElement === $('#start'), 'Cancel focus not restored');
   $('#start').click();
@@ -122,6 +132,45 @@ await check('Counting dialog restores the card on every exit and isolates later 
   $('#start').click(); fakeNow += 30000; tick(); restored();
   assert(!pending, 'Zero count produced a result');
   fakeNow = 0;
+});
+// Contract: the screen-open hint stays with the sound status (sound first), including when a tick's check settles during
+// a count; the status after Start comes from the checkbox alone, so it says "on for this count", never "on" (round 9).
+await check('Start keeps the screen-open hint beside the sound status', async () => {
+  const original = {...tapSound};
+  const box = $('#tap-sound');
+  let available = true;
+  const queued = [];
+  class Audio {
+    constructor() { this.state = 'suspended'; this.currentTime = 0; }
+    resume() { return new Promise((resolve, reject) => queued.push(() => { if (!available) { reject(new Error('No audio')); return; } this.state = 'running'; resolve(); })); }
+    suspend() { this.state = 'suspended'; return Promise.resolve(); }
+    createOscillator() { return {frequency:{},connect(){},disconnect(){},start(){},stop(){}}; }
+    createGain() { return {gain:{setValueAtTime(){},linearRampToValueAtTime(){}},connect(){},disconnect(){}}; }
+  }
+  const settle = async () => { while (queued.length) queued.shift()(); await sleep(0); await sleep(0); };
+  const status = () => $('#counter-status').textContent;
+  try {
+    assert(countHint === 'Keep this screen open while counting.' && soundCountStatus === 'Tap sound is on for this count.', 'Status constants changed');
+    Object.assign(tapSound, createTapSound(Audio));
+    box.checked = false; fakeNow = 0; $('#start').click();
+    assert(status() === countHint, 'Unticked count status: ' + status());
+    $('#cancel').click();
+    box.checked = true; $('#start').click();
+    assert(status() === soundCountStatus + ' ' + countHint && status() === 'Tap sound is on for this count. Keep this screen open while counting.', 'Ticked count status: ' + status());
+    $('#cancel').click();
+    // The tick's check settles after Start: available keeps the hint; unavailable says so, still with the hint.
+    for (const audio of [true, false]) {
+      available = audio; queued.length = 0;
+      Object.assign(tapSound, createTapSound(Audio));
+      box.checked = true; box.dispatchEvent(new Event('change'));
+      $('#start').click();
+      await settle();
+      const expected = (audio ? soundCountStatus : soundUnavailableStatus) + ' ' + countHint;
+      assert(session && status() === expected, 'Mid-count status (audio ' + audio + '): ' + status());
+      assert(box.checked === audio, 'Mid-count unavailable audio left the box ticked');
+      $('#cancel').click();
+    }
+  } finally { if (session) $('#cancel').click(); Object.assign(tapSound, original); box.checked = false; fakeNow = 0; }
 });
 await check('Delayed audio never blocks counting or replays tones into a later session', async () => {
   const original = {...tapSound};
@@ -140,19 +189,19 @@ await check('Delayed audio never blocks counting or replays tones into a later s
     assert(timer && session && countingDialog.open, 'Audio delayed the measurement');
     const requested=resumes.length;
     $('#breath-button').click(); $('#breath-button').click();
-    assert(session.count===2 && tones===0, 'Suspended audio affected counting');
+    assert(session.tapOffsetsMs.length===2 && tones===0, 'Suspended audio affected counting');
     assert(resumes.length===requested+2, 'A tap on suspended audio did not request resume');
     $('#cancel').click(); $('#tap-sound').checked=false; $('#start').click();
     const next=session;
     context.state='running'; resumes[0].resolve(); await sleep(0);
-    assert(session===next && session.count===0 && tones===0, 'Late audio changed a later session');
-    $('#breath-button').click(); assert(session.count===1 && tones===0, 'Opt-out made a tone');
+    assert(session===next && session.tapOffsetsMs.length===0 && tones===0, 'Late audio changed a later session');
+    $('#breath-button').click(); assert(session.tapOffsetsMs.length===1 && tones===0, 'Opt-out made a tone');
     $('#cancel').click(); $('#tap-sound').checked=true; context.state='suspended'; $('#start').click();
     resumes.at(-1).reject(new Error('Audio denied')); await sleep(0);
-    $('#breath-button').click(); assert(session.count===1 && tones===0, 'Rejected audio blocked counting');
+    $('#breath-button').click(); assert(session.tapOffsetsMs.length===1 && tones===0, 'Rejected audio blocked counting');
     context.state='running'; $('#breath-button').click();
-    assert(session.count===2 && tones===1, 'Accepted click did not produce exactly one tone');
-    $('#undo').click(); assert(session.count===1 && tones===1, 'Undo requested a breath tone');
+    assert(session.tapOffsetsMs.length===2 && tones===1, 'Accepted click did not produce exactly one tone');
+    $('#undo').click(); assert(session.tapOffsetsMs.length===1 && tones===1, 'Undo requested a breath tone');
   } finally { $('#cancel').click(); Object.assign(tapSound,original); $('#tap-sound').checked=checked; }
 });
 await check('Ticking tap sound reports real audio availability and never blocks counting', async () => {
@@ -167,31 +216,158 @@ await check('Ticking tap sound reports real audio availability and never blocks 
     assert($('#counter-status').textContent === 'Tap sound is not available on this device.', 'Missing audio status: ' + $('#counter-status').textContent);
     assert(!box.checked, 'Unavailable sound left the box ticked');
     $('#start').click(); $('#breath-button').click();
-    assert(session && session.count === 1 && $('#counter-status').textContent === 'Keep this screen open while counting.', 'Unavailable sound affected counting');
+    assert(session && session.tapOffsetsMs.length === 1 && $('#counter-status').textContent === countHint, 'Unavailable sound affected counting');
     $('#cancel').click();
     Object.assign(tapSound, createTapSound(class { constructor() { throw new Error('No audio'); } }));
     await tickBox();
     assert(!box.checked && $('#counter-status').textContent === 'Tap sound is not available on this device.', 'Throwing audio reported as on');
     Object.assign(tapSound, createTapSound(Running));
     await tickBox();
-    assert(box.checked && $('#counter-status').textContent === 'Tap sound on. Device volume or mute may prevent sound.', 'Available audio status: ' + $('#counter-status').textContent);
+    assert(box.checked && $('#counter-status').textContent === soundOnStatus && soundOnStatus === 'Tap sound on. Device volume or mute may prevent sound.', 'Available audio status: ' + $('#counter-status').textContent);
     box.checked = false; box.dispatchEvent(new Event('change'));
     assert($('#counter-status').textContent === 'Start the timer, then tap for each breath.', 'Unticking left a sound status');
   } finally { Object.assign(tapSound, original); box.checked = false; }
 });
+// Contract: unticking Quiet tap sound always leaves the context not running and no tone enabled, whether the
+// tick's detect() finished, is still pending, or a count already ended; counting never depends on audio.
+await check('Unticking tap sound suspends audio in every idle state without affecting counting', async () => {
+  const original = {...tapSound};
+  const box = $('#tap-sound');
+  let context, suspends = 0, tones = 0, deferred = false;
+  const pendingResumes = [];
+  class Audio {
+    constructor() { context = this; this.state = 'suspended'; this.currentTime = 0; }
+    // Operations apply in call order: a suspend requested after resume wins, as in a real AudioContext.
+    resume() { const at = suspends; return new Promise(resolve => {
+      const settle = () => { if (suspends === at) this.state = 'running'; resolve(); };
+      if (deferred) pendingResumes.push(settle); else settle(); }); }
+    suspend() { suspends++; this.state = 'suspended'; return Promise.resolve(); }
+    createOscillator() { tones++; return {frequency:{},connect(){},disconnect(){},start(){},stop(){}}; }
+    createGain() { return {gain:{setValueAtTime(){},linearRampToValueAtTime(){}},connect(){},disconnect(){}}; }
+  }
+  const setBox = checked => { box.checked = checked; box.dispatchEvent(new Event('change')); };
+  const settle = async () => { pendingResumes.splice(0).forEach(resolve => resolve()); await sleep(0); await sleep(0); };
+  const cells = {
+    'ticked, audio running': async () => { setBox(true); await settle(); assert(context.state === 'running', 'tick did not start audio'); },
+    'ticked, detect still pending': async () => { deferred = true; setBox(true); },
+    'ticked, after a finished count': async () => {
+      setBox(true); await settle(); $('#start').click(); $('#breath-button').click(); $('#cancel').click(); setBox(true); await settle();
+      assert(context.state === 'running', 're-tick did not resume audio'); }
+  };
+  try {
+    for (const [cell, arrange] of Object.entries(cells)) {
+      context = undefined; deferred = false; pendingResumes.length = 0;
+      Object.assign(tapSound, createTapSound(Audio));
+      await arrange();
+      const before = suspends;
+      setBox(false); await settle();
+      assert(suspends > before, cell + ': unticking did not request suspend');
+      assert(context.state !== 'running', cell + ': audio still running after untick (' + context.state + ')');
+      assert(!box.checked && $('#counter-status').textContent !== soundOnStatus, cell + ': stale detect re-ticked the box or status');
+      const made = tones;
+      $('#start').click(); $('#breath-button').click();
+      assert(session && session.tapOffsetsMs.length === 1 && tones === made, cell + ': unticked count sounded or failed to count');
+      $('#cancel').click();
+    }
+    Object.assign(tapSound, createTapSound(undefined));
+    setBox(false); await settle(); // Never ticked, no audio: unticking must not throw.
+  } finally { if (session) $('#cancel').click(); Object.assign(tapSound, original); box.checked = false; }
+});
+// Contract: the box is ticked exactly when a count will attempt sound, and a tick's detect() result counts only
+// while that tick is still the latest sound intent. A count ending suspends audio itself, so a detect() still
+// pending then must not read that suspend as "unavailable" and untick the box or overwrite the count's message.
+// A reset that ends no count (refresh() from another tab or visibilitychange, a duration button, the dog select)
+// supersedes nothing: a pending result still applies, and a settled one is left as it was (round 4).
+// State space: {ticked, unticked} x {detect settles idle, during the count, after cancel, after finish, after a
+// zero-tap finish, after an idle reset by refresh() / duration button / dog select, settled then idle reset by each}
+// x {audio available, unavailable}. Every cell also checks taps count exactly once.
+await check('A tap-sound check still pending when a count ends keeps the box and count message consistent', async () => {
+  const original = {...tapSound};
+  const box = $('#tap-sound');
+  const on = soundOnStatus, off = soundUnavailableStatus;
+  const cancelled = 'Count cancelled. Start again when your dog is settled.';
+  let context, suspends = 0, tones = 0, available = true;
+  const queued = [];
+  class Audio {
+    constructor() { context = this; this.state = 'suspended'; this.currentTime = 0; }
+    // Deferred like a real resume() awaiting the device. A suspend requested after it wins; unavailable audio rejects.
+    resume() { const at = suspends; return new Promise((resolve, reject) => queued.push(() => {
+      if (!available) { reject(new Error('Audio unavailable')); return; }
+      if (suspends === at) this.state = 'running';
+      resolve();
+    })); }
+    suspend() { suspends++; this.state = 'suspended'; return Promise.resolve(); }
+    createOscillator() { tones++; return {frequency:{},connect(){},disconnect(){},start(){},stop(){}}; }
+    createGain() { return {gain:{setValueAtTime(){},linearRampToValueAtTime(){}},connect(){},disconnect(){}}; }
+  }
+  const settle = async () => { while (queued.length) queued.shift()(); await sleep(0); await sleep(0); };
+  const setBox = checked => { box.checked = checked; box.dispatchEvent(new Event('change')); };
+  const startAndTap = () => { fakeNow = 0; $('#start').click(); $('#breath-button').click();
+    assert(session && session.tapOffsetsMs.length === 1, 'pending sound check changed counting'); };
+  const discard = async () => { const done = $('#discard').onclick(); $('#confirm-yes').click(); await done; };
+  // Each phase arranges a count around a tick whose detect() is still pending, then settles every resume.
+  const phases = {
+    idle: { run: async () => { await settle(); } },
+    'during the count': { run: async () => { startAndTap(); await settle(); $('#cancel').click(); }, status: cancelled, during: true },
+    'after cancel': { run: async () => { startAndTap(); $('#cancel').click(); await settle(); }, status: cancelled, ended: true },
+    'after finish': { run: async () => { startAndTap(); fakeNow = 30000; tick(); await settle();
+      assert(pending && pending.count === 1, 'finish lost the count'); }, status: 'Reading ready to save.', ended: true, saved: true },
+    'after a zero-tap finish': { run: async () => { fakeNow = 0; $('#start').click(); fakeNow = 30000; tick(); await settle(); },
+      status: 'No breaths were counted. Please try again.', ended: true }
+  };
+  const idleResets = {
+    'refresh()': async () => { await refresh(); },
+    'duration button': async () => { document.querySelector('[data-duration="30"]').click(); },
+    'dog select': async () => { $('#selected-dog').dispatchEvent(new Event('change')); }
+  };
+  for (const [name, reset] of Object.entries(idleResets)) {
+    phases['after an idle reset by ' + name] = { run: async () => {
+      assert(queued.length > 0 || !box.checked, 'detect was not pending before the reset');
+      await reset(); assert(!session && !pending, name + ' opened a count'); await settle(); } };
+    phases['settled, then an idle reset by ' + name] = { run: async () => { await settle(); await reset(); await settle(); },
+      status: 'Start the timer, then tap for each breath.' };
+  }
+  try {
+    for (const ticked of [true, false]) for (const [phase, spec] of Object.entries(phases)) for (const audio of [true, false]) {
+      const cell = (ticked ? 'ticked' : 'unticked') + ', ' + phase + ', audio ' + (audio ? 'available' : 'unavailable');
+      context = undefined; queued.length = 0; available = audio; fakeNow = 0;
+      Object.assign(tapSound, createTapSound(Audio));
+      resetCounter();
+      setBox(true);
+      if (!ticked) setBox(false);
+      await spec.run();
+      if (spec.saved) await discard();
+      // Expected box: an untick always wins; a result arriving idle or mid-count reports the device; a count that ended
+      // first leaves the tick standing, so the next count still attempts sound.
+      const expectBox = ticked && (audio || spec.ended === true);
+      const expectStatus = spec.status ?? (ticked ? (audio ? on : off) : 'Start the timer, then tap for each breath.');
+      assert(box.checked === expectBox, cell + ': box ' + box.checked + ', expected ' + expectBox);
+      if (!spec.saved) assert($('#counter-status').textContent === expectStatus, cell + ': status "' + $('#counter-status').textContent + '", expected "' + expectStatus + '"');
+      // The box predicts the next count: ticked attempts sound (and sounds when the device allows), unticked never does.
+      const made = tones;
+      startAndTap(); await settle(); $('#breath-button').click();
+      assert(session.tapOffsetsMs.length === 2, cell + ': next count miscounted');
+      assert((tones > made) === (expectBox && audio), cell + ': next count sounded ' + (tones - made) + ' times with box ' + box.checked);
+      $('#cancel').click(); setBox(false); await settle();
+    }
+  } finally { if (session) $('#cancel').click(); if (pending) await discard(); Object.assign(tapSound, original); box.checked = false; fakeNow = 0; }
+});
 await check('30-second count, undo, deadline, save and persisted result', async () => {
   $('#start').click();
-  for(let i=0;i<13;i++) $('#breath-button').click();
+  const expectedOffsets = Array.from({length:12}, (_,i) => 500 + i * 1234);
+  for(let i=0;i<13;i++) { fakeNow = 500.9 + i * 1234; $('#breath-button').click(); }
   $('#undo').click();
   assert($('#counter-number').textContent === '12', 'Undo count wrong');
   fakeNow = 30000;
   $('#breath-button').click();
   assert(pending.count === 12 && pending.rate === 24, 'Deadline tap incorrectly counted');
+  assert(JSON.stringify(pending.tapOffsetsMs) === JSON.stringify(expectedOffsets), 'Undo/deadline changed accepted timing');
   $('#reading-notes').value = 'Quiet <script>window.unwanted = true<\\/script>';
   $('#reading-context').value = 'asleep';
   $('#reading-uncertain').checked = true;
   await $('#save-reading').onclick();
   const savedReading = (await readAll(db)).readings[0];
+  assert(JSON.stringify(savedReading.tapOffsetsMs) === JSON.stringify(expectedOffsets), 'Save lost timing');
   assert(savedReading.context === 'asleep' && savedReading.uncertain && savedReading.source === 'timed', 'Context not saved');
   assert((await readAll(db)).readings.length === 1, 'Saved reading missing');
   assert(!pending, 'Result not cleared after commit');
@@ -212,6 +388,8 @@ await check('60-second count and failed save retains the result', async () => {
   fakeNow = 100000;
   tick();
   assert(pending.rate === 19 && pending.seconds === 60, '60-second rate wrong');
+  const expectedTiming = JSON.stringify(pending.tapOffsetsMs);
+  const pendingId = pending.id;
   const originalPut = IDBObjectStore.prototype.put;
   IDBObjectStore.prototype.put = function(...args) {
     const request = originalPut.apply(this,args);
@@ -220,10 +398,11 @@ await check('60-second count and failed save retains the result', async () => {
   };
   try { await $('#save-reading').onclick(); }
   finally { IDBObjectStore.prototype.put = originalPut; }
-  assert(pending?.count === 19, 'Failed save discarded result');
+  assert(pending?.count === 19 && JSON.stringify(pending.tapOffsetsMs) === expectedTiming, 'Failed save discarded result or timing');
   assert((await readAll(db)).readings.length === 1, 'Aborted save committed');
   await $('#save-reading').onclick();
   assert((await readAll(db)).readings.length === 2, 'Retry failed');
+  assert(JSON.stringify((await readAll(db)).readings.find(r=>r.id===pendingId).tapOffsetsMs) === expectedTiming, 'Retry changed timing');
 });
 await check('Zero-breath session cannot produce a reading', async () => {
   fakeNow = 200000;
@@ -309,7 +488,7 @@ await check('Checking and downloading updates preserves active counts, results a
   $('#breath-button').click();
   const active = session;
   await updates.check();
-  assert(session === active && session.count === 1, 'Update check interrupted counting');
+  assert(session === active && session.tapOffsetsMs.length === 1, 'Update check interrupted counting');
   assert($('#app-version').textContent.includes(RELEASE.build), 'Running build missing');
   assert($('#update-status').textContent.includes('latest published'), 'Latest check missing');
   const worker = new EventTarget();
@@ -323,7 +502,7 @@ await check('Checking and downloading updates preserves active counts, results a
   assert(session === active && !$('#update-notice').hidden, 'Waiting update interrupted count or hid notice');
   const notice = $('#update-notice'), message = notice.textContent;
   $('#breath-button').click();
-  assert(session === active && session.count === 2, 'Mid-count notice altered counting');
+  assert(session === active && session.tapOffsetsMs.length === 2, 'Mid-count notice altered counting');
   const announced = [];
   const observer = new MutationObserver(records => { for (const r of records) for (const n of r.addedNodes) announced.push(n.textContent); });
   observer.observe(notice, {childList:true, characterData:true, subtree:true});
@@ -414,6 +593,190 @@ await check('History context filters chart and list, preserves unknown context a
   await refresh();
   showPage('measure');
 });
+await check('History replays individual points and visible readings newest first without changing data or audio', async () => {
+  const originalDog = selectedId, originalNow = fakeNow;
+  const replayDog = {id:'replay-dog',name:'Replay check',threshold:null,photo:''};
+  await saveDog(db,replayDog);
+  const base = {...record,dogId:replayDog.id,count:3,rate:6,tapOffsetsMs:[1000,4500,12345],context:'asleep'};
+  const fixtures = [
+    {...base,id:'replay-new',date:'2026-11-14T12:00:00.000Z'},
+    {...base,id:'replay-tie',date:'2026-11-14T12:00:00.000Z'},
+    {...base,id:'replay-old',date:'2020-01-01T12:00:00.000Z',context:'resting'},
+    {...record,id:'replay-legacy',dogId:replayDog.id},
+    {...record,id:'replay-manual',dogId:replayDog.id,source:'manual',count:null,seconds:null,rate:23},
+  ];
+  for (const r of fixtures) await saveReading(db,r);
+  // A stored trace that fails validation (written around the validator) is untimed: no control, no chart hit target.
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('readings', 'readwrite');
+    tx.objectStore('readings').put({...base,id:'replay-bad',date:'2020-01-02T12:00:00.000Z',tapOffsetsMs:[1]});
+    tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+  });
+  selectedId = replayDog.id; await refresh(); setRange('all'); setHistoryContext('all'); showPage('history');
+  await sleep(40);
+  const before = JSON.stringify(await readAll(db));
+  let sounds = 0; const playSound = tapSound.play; tapSound.play = () => sounds++;
+  try {
+    assert(document.querySelectorAll('.replay-reading').length === 3, 'Unavailable readings acquired replay controls');
+    drawChart();
+    assert(historyChart.points.length === 3 && !historyChart.points.some(p=>p.entry.id==='replay-bad'), 'Chart offered a point that cannot replay');
+    assert($('#reading-list').textContent.includes('Tap timing unavailable'), 'Untimed status missing');
+    const row = id => [...document.querySelectorAll('.reading-row')].find(r=>r.dataset.readingId===id);
+    // Layout must not move: the list heading below the replay detail and the replaying row's text stay put.
+    const layout = () => {
+      const chartTop = $('#history-chart').getBoundingClientRect().top;
+      const heading = $('#reading-total').closest('.section-heading').getBoundingClientRect();
+      const details = row('replay-old').querySelector('.reading-details').getBoundingClientRect();
+      return JSON.stringify([heading.top - chartTop, details.left, details.width]);
+    };
+    $('#replay-status').textContent = ''; $('#replay-progress').textContent = '';
+    const idleLayout = layout();
+    row('replay-old').querySelector('.replay-reading').click();
+    assert(historyChart.replay.entry.id === 'replay-old' && historyChart.replay.total === 1 && historyChart.replay.tapCount === 0, 'Individual replay wrong');
+    await sleep(40);
+    assert(row('replay-old').classList.contains('replaying') && $('#replay-detail').getAttribute('aria-hidden') === 'false', 'Replay detail or row cue missing');
+    assert(layout() === idleLayout, 'Starting replay moved layout: ' + idleLayout + ' -> ' + layout());
+    const announcement = $('#replay-status').textContent;
+    fakeNow += 1000; await sleep(40);
+    assert(historyChart.replay.tapCount === 1 && $('#replay-status').textContent === announcement, 'Tap changed live announcement');
+    const elapsed = historyChart.replay.elapsedMs;
+    window.dispatchEvent(new Event('resize'));
+    assert(historyChart.replay.entry.id === 'replay-old' && historyChart.replay.elapsedMs === elapsed, 'Resize restarted playback');
+    const radii = [], arc = CanvasRenderingContext2D.prototype.arc;
+    CanvasRenderingContext2D.prototype.arc = function(...args) { radii.push(args[2]); return arc.apply(this,args); };
+    try {
+      Object.defineProperty(reducedMotion,'matches',{configurable:true,value:false}); drawChart();
+      assert(radii.some(r=>r>7), 'Recorded tap did not pulse');
+      radii.length = 0;
+      Object.defineProperty(reducedMotion,'matches',{configurable:true,value:true}); reducedMotion.dispatchEvent(new Event('change'));
+      assert(radii.includes(7) && !radii.some(r=>r>7), 'Reduced motion still pulses');
+    } finally { delete reducedMotion.matches; CanvasRenderingContext2D.prototype.arc = arc; }
+    $('#replay-stop').click(); assert(!historyChart.replay && !replay.active && $('#replay-stop').disabled, 'Stop left playback alive');
+    assert(layout() === idleLayout, 'Stopping replay moved layout: ' + idleLayout + ' -> ' + layout());
+    assert($('#replay-detail').inert && $('#replay-detail').getAttribute('aria-hidden') === 'true' && getComputedStyle($('#replay-detail')).visibility === 'hidden', 'Inactive replay detail exposed');
+    drawChart(); const point = historyChart.points.find(p=>p.entry.id==='replay-old');
+    const rect = $('#history-chart').getBoundingClientRect();
+    $('#history-chart').dispatchEvent(new MouseEvent('click',{clientX:rect.left+point.x,clientY:rect.top+point.y}));
+    assert(historyChart.replay?.entry.id === 'replay-old', 'Chart point selected the wrong reading');
+    $('#replay-all').click();
+    assert(historyChart.replay.entry.id === 'replay-new' && historyChart.replay.total === 3 && replay.active, 'Sequence did not start newest eligible first');
+    fakeNow += 29999; await sleep(40);
+    assert(historyChart.replay.entry.id === 'replay-new', 'Trailing silence was skipped');
+    fakeNow += 1; await sleep(40);
+    assert(historyChart.replay.entry.id === 'replay-tie' && historyChart.replay.elapsedMs === 0, 'Tie order or duration wrong');
+    fakeNow += 30000; await sleep(40);
+    assert(historyChart.replay.entry.id === 'replay-old', 'Older reading was not next');
+    fakeNow += 30000; await sleep(40);
+    assert(!historyChart.replay && !replay.active && $('#replay-status').textContent === 'Replay finished.' && $('#replay-stop').disabled, 'Sequence failed to finish');
+    assert(layout() === idleLayout, 'Finished replay moved layout: ' + idleLayout + ' -> ' + layout());
+    // A reading's status, row cue, Stop, detail and timeline are written once, on its first frame; frames for the same
+    // reading leave them alone. Sentinels written between frames must survive until the reading changes.
+    let timelines = 0; const drawTimeline = historyChart.drawTimeline;
+    historyChart.drawTimeline = () => { timelines++; drawTimeline(); };
+    try {
+      const sentinel = () => { $('#replay-status').textContent = 'sentinel'; $('#replay-stop').disabled = true;
+        $('#replay-detail').setAttribute('aria-hidden', 'true'); for (const r of document.querySelectorAll('.reading-row')) r.classList.remove('replaying'); };
+      const untouched = () => $('#replay-status').textContent === 'sentinel' && $('#replay-stop').disabled &&
+        $('#replay-detail').getAttribute('aria-hidden') === 'true' && !document.querySelector('.reading-row.replaying');
+      const shown = (id, n) => $('#replay-status').textContent.endsWith(n + ' of 3.') && !$('#replay-stop').disabled &&
+        $('#replay-detail').getAttribute('aria-hidden') === 'false' && [...document.querySelectorAll('.reading-row.replaying')].map(r=>r.dataset.readingId).join() === id;
+      $('#replay-all').click();
+      assert(timelines === 1 && shown('replay-new', 1), 'First frame did not render the reading UI once');
+      sentinel(); const progress = $('#replay-progress').textContent;
+      fakeNow += 1000; await sleep(40); fakeNow += 1000; await sleep(40);
+      assert(historyChart.replay.entry.id === 'replay-new' && $('#replay-progress').textContent !== progress, 'Same-reading frames did not arrive');
+      assert(timelines === 1 && untouched(), 'A same-reading frame rewrote the reading UI');
+      fakeNow += 28000; await sleep(40);
+      assert(historyChart.replay.entry.id === 'replay-tie' && timelines === 2 && shown('replay-tie', 2), 'Reading change did not render the reading UI once');
+      sentinel(); fakeNow += 500; await sleep(40);
+      assert(timelines === 2 && untouched(), 'A same-reading frame after a change rewrote the reading UI');
+      // Replaying the same reading again after Stop renders it afresh.
+      stopReplay(); row('replay-old').querySelector('.replay-reading').click();
+      assert(timelines === 3, 'Replay after Stop did not render its reading');
+      $('#replay-stop').click(); row('replay-old').querySelector('.replay-reading').click();
+      assert(timelines === 4 && row('replay-old').classList.contains('replaying') && !$('#replay-stop').disabled, 'Same reading replayed after Stop was not rendered');
+      $('#replay-stop').click();
+    } finally { historyChart.drawTimeline = drawTimeline; }
+    $('#history-context').value = 'resting'; $('#history-context').onchange(); $('#replay-all').click();
+    assert(historyChart.replay.entry.id === 'replay-old' && historyChart.replay.total === 1, 'Sequence ignored context filter');
+    assert(toCsv(snapshot).includes('2026-11-14T12:00:00.000Z'), 'Replay filtering changed export scope');
+    assert(sounds === 0, 'Silent replay used recording audio');
+    assert(JSON.stringify(await readAll(db)) === before, 'Replay modified journal data');
+    const operations = [
+      async()=>document.querySelector('[data-range="7"]').click(),
+      async()=>{ $('#history-context').value='asleep'; $('#history-context').onchange(); },
+      async()=>{ $('#history-dog-select').value=originalDog; $('#history-dog-select').onchange(); },
+      async()=>showPage('settings'),
+      async()=>{ openManual(); assert(!historyChart.replay,'Manual form did not stop replay'); finishManual(); },
+      async()=>{ openDog(replayDog.id); assert(!historyChart.replay,'Profile form did not stop replay'); $('#dog-dialog').close(); },
+      async()=>{ const result=confirmAction('Test','Test'); assert(!historyChart.replay,'Confirmation did not stop replay'); $('#confirm-no').click(); await result; },
+      async()=>{ Object.defineProperty(document,'hidden',{configurable:true,value:true}); document.dispatchEvent(new Event('visibilitychange')); delete document.hidden; },
+      async()=>window.dispatchEvent(new Event('pagehide')),
+      async()=>{ await saveReading(db,{...fixtures[0],notes:'Changed elsewhere'}); await refresh(); },
+      async()=>{ $('#start').click(); assert(!historyChart.replay && session,'Starting count did not stop replay'); $('#cancel').click(); },
+    ];
+    for (let i=0;i<operations.length;i++) {
+      selectedId=replayDog.id; setRange('all'); setHistoryContext('all'); showPage('history');
+      $('#replay-all').click(); assert(historyChart.replay && replay.active, 'Cannot start lifecycle case '+i);
+      await operations[i](); await sleep(30);
+      assert(!historyChart.replay && !replay.active && $('#replay-stop').disabled, 'Replay survived lifecycle case '+i);
+    }
+  } finally {
+    tapSound.play = playSound; stopReplay(); selectedId=originalDog; fakeNow=originalNow;
+    await deleteReading(db,'replay-bad');
+    setRange('all'); setHistoryContext('all'); await refresh(); showPage('measure');
+  }
+});
+// Contract: one ordering defines both the History list and the replay queue, including same-date ties.
+await check('History list order equals replay queue order for same-date readings', async () => {
+  const originalDog = selectedId, originalNow = fakeNow, originalReadings = snapshot.readings;
+  const orderDog = {id:'order-dog',name:'Order check',threshold:null,photo:''};
+  const at = (id, date) => ({...record,id,dogId:orderDog.id,date,count:3,rate:6,tapOffsetsMs:[1000,4500,12345],context:'asleep'});
+  const same = '2026-11-14T12:00:00.000Z';
+  // Stored order differs from the expected order; 'order-B' < 'order-a' by code unit but not by locale.
+  const fixtures = [at('order-old','2026-11-13T12:00:00.000Z'), at('order-a',same), at('order-b',same), at('order-B',same)];
+  snapshot.dogs.push(orderDog); snapshot.readings = [...originalReadings, ...fixtures];
+  try {
+    selectedId = orderDog.id; renderProfiles(); setRange('all'); setHistoryContext('all'); showPage('history');
+    const listOrder = [...document.querySelectorAll('.reading-row')].map(row => row.dataset.readingId);
+    const queueOrder = replayableReadings(fixtures).map(entry => entry.id);
+    $('#replay-all').click();
+    const played = [];
+    for (let i = 0; i < fixtures.length && historyChart.replay; i++) { played.push(historyChart.replay.entry.id); fakeNow += 30000; await sleep(30); }
+    assert(listOrder.join() === queueOrder.join(), 'History list ' + listOrder.join() + ' differs from replay queue ' + queueOrder.join());
+    assert(played.join() === listOrder.join(), 'Replay played ' + played.join() + ' but History lists ' + listOrder.join());
+    assert(listOrder.join() === 'order-B,order-a,order-b,order-old', 'Not newest first by code unit: ' + listOrder.join());
+  } finally {
+    stopReplay(); snapshot.readings = originalReadings; snapshot.dogs.pop(); selectedId = originalDog; fakeNow = originalNow;
+    renderProfiles(); setRange('all'); setHistoryContext('all'); renderHistory(); showPage('measure');
+  }
+});
+// Contract: the chart draws, and hit-tests, exactly the readings History last rendered. A redraw on resize must not
+// re-filter by the current time, or a reading near the period's edge stays in the list but leaves the chart.
+await check('Chart redraws keep the readings History rendered, even after the period edge passes', async () => {
+  const originalDog = selectedId, originalReadings = snapshot.readings, realNow = Date.now;
+  const driftDog = {id:'drift-dog',name:'Drift check',threshold:null,photo:''};
+  const at = (id, ms) => ({...record,id,dogId:driftDog.id,date:new Date(ms).toISOString(),count:3,rate:6,tapOffsetsMs:[1000,4500,12345],context:'asleep'});
+  const now = realNow.call(Date);
+  const fixtures = [at('drift-edge', now - 7 * 86400000 + 60000), at('drift-new', now - 3600000), at('drift-mid', now - 2 * 86400000)];
+  snapshot.dogs.push(driftDog); snapshot.readings = [...originalReadings, ...fixtures];
+  try {
+    selectedId = driftDog.id; renderProfiles(); setHistoryContext('all'); setRange('7'); showPage('history'); renderHistory();
+    const rendered = [...document.querySelectorAll('.reading-row')].filter(row => row.querySelector('.replay-reading')).map(row => row.dataset.readingId);
+    assert(rendered.join() === 'drift-new,drift-mid,drift-edge', 'Unexpected rendered list ' + rendered.join());
+    Date.now = () => now + 120000; // Two minutes later the edge reading is outside a fresh 7-day filter.
+    window.dispatchEvent(new Event('resize'));
+    const charted = historyChart.points.map(point => point.entry.id);
+    assert(charted.join() === [...rendered].reverse().join(), 'Chart shows ' + charted.join() + ' but History lists ' + rendered.join());
+    const point = historyChart.points.find(p => p.entry.id === 'drift-edge');
+    const rect = $('#history-chart').getBoundingClientRect();
+    $('#history-chart').dispatchEvent(new MouseEvent('click', {clientX: rect.left + point.x, clientY: rect.top + point.y}));
+    assert(historyChart.replay?.entry.id === 'drift-edge', 'Chart point for a listed reading did not replay it');
+  } finally {
+    Date.now = realNow; stopReplay(); snapshot.readings = originalReadings; snapshot.dogs.pop(); selectedId = originalDog;
+    renderProfiles(); setRange('all'); setHistoryContext('all'); renderHistory(); showPage('measure');
+  }
+});
 await check('Concurrent connections preserve distinct records', async () => {
   const second = await openDatabase();
   await Promise.all([saveReading(db,{...record,id:'concurrent-a'}),saveReading(second,{...record,id:'concurrent-b'})]);
@@ -455,7 +818,16 @@ await check('Backup round-trip restores into an empty database', async () => {
   await restoreBackup(fresh,JSON.parse(JSON.stringify(saved)));
   const restored = await readAll(fresh);
   assert(restored.dogs.length === saved.dogs.length && restored.readings.length === saved.readings.length, 'Round-trip lost data');
+  assert(JSON.stringify(restored.readings) === JSON.stringify(saved.readings), 'Round-trip changed records or timing');
   fresh.close();
+});
+await check('Save copies caller timing before asynchronous storage', async () => {
+  const input = {...record,id:'timing-copy',count:3,rate:6,tapOffsetsMs:[10,1300,29999]};
+  const saved = saveReading(db,input);
+  input.tapOffsetsMs[0] = 999; input.tapOffsetsMs.push(30000);
+  await saved;
+  assert(JSON.stringify((await readAll(db)).readings.find(r=>r.id===input.id).tapOffsetsMs) === '[10,1300,29999]', 'Save aliased caller timing');
+  await deleteReading(db,input.id);
 });
 // Smoke check only: Chromium already shrinks the select without the minmax(0,1fr)/min-width:0 rules, so this
 // passes on the unfixed CSS. The structure test on those rules is the regression guard.
@@ -595,6 +967,65 @@ await check('Counting targets stay separate and reachable across phone sizes, sa
 await refresh();
 $('#error').hidden = true;
 showPage('measure');
+// Contract (owner-approved, 14 November 2026): a finished count's result card ignores pointer and keyboard input for
+// resultGuardMs, so taps still meant for the big target cannot land on Save, Discard or the notes field. It is inert,
+// so a real finger is hit-tested past it; elementFromPoint plus click() reproduces that. The guard ends by its own
+// timer, and every other exit (discard, save, reset, a new count) clears it, so inert never stays stuck.
+await check('A finished count ignores late taps on the result card, then Save works (last: it saves a reading)', async () => {
+  const result = $('#result');
+  const tapAt = target => {
+    target.scrollIntoView({block:'center'});
+    const box = target.getBoundingClientRect();
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    hit?.click();
+    return hit;
+  };
+  const finish = (taps = 1) => { fakeNow = 0; $('#start').click(); for (let i = 0; i < taps; i++) $('#breath-button').click(); fakeNow = session.seconds * 1000; tick(); };
+  const stored = async () => (await readAll(db)).readings.length;
+  const before = await stored();
+  try {
+    finish();
+    assert(pending && !result.hidden && result.inert && resultGuardTimer !== null, 'Result card is not guarded after a count ends: ' + JSON.stringify({pending: !!pending, session: !!session, hidden: result.hidden, inert: result.inert, timer: resultGuardTimer, status: $('#counter-status').textContent}));
+    assert($('#counter-status').textContent === 'Reading ready to save.' && !result.contains($('#counter-status')) && !$('#counter-status').closest('[inert]'), 'Result announcement is inside the guarded card');
+    for (const control of ['#save-reading', '#discard']) {
+      const hit = tapAt($(control));
+      assert(!hit || !result.contains(hit), control + ' received a pointer tap during the guard');
+    }
+    await sleep(0);
+    assert($('#confirm-dialog').open === false && pending && await stored() === before, 'A late tap saved or discarded the reading');
+    $('#reading-notes').focus(); $('#reading-context').focus();
+    assert(!result.contains(document.activeElement), 'Keyboard focus reached the guarded result card');
+    await sleep(resultGuardMs + 100);
+    assert(!result.inert && resultGuardTimer === null && document.activeElement === $('#save-reading'), 'Guard did not end by itself with focus on Save');
+    assert(tapAt($('#save-reading')) === $('#save-reading'), 'Save is not reachable after the guard');
+    for (let i = 0; i < 100 && pending; i++) await sleep(10);
+    assert(!pending && await stored() === before + 1 && !result.inert, 'Save after the guard did not store the reading');
+    // Discard (and every resetCounter) clears the guard and its timer at once.
+    finish();
+    assert(result.inert && resultGuardTimer !== null, 'Second result not guarded');
+    const discard = $('#discard').onclick(); $('#confirm-yes').click(); await discard;
+    assert(!pending && result.hidden && !result.inert && resultGuardTimer === null, 'Discard left the guard armed');
+    // A cancelled or zero-tap count has no result card and arms nothing.
+    finish(0);
+    assert(!pending && result.hidden && !result.inert && resultGuardTimer === null, 'Zero-tap finish armed the guard');
+    $('#start').click(); $('#breath-button').click(); $('#cancel').click();
+    assert(!result.inert && resultGuardTimer === null, 'Cancelled count armed the guard');
+    // Defensive: Start clears the guard even when no reset ran first.
+    finish();
+    assert(result.inert, 'Third result not guarded');
+    pending = null; $('#start').click();
+    assert(session && !result.inert && resultGuardTimer === null, 'A new count left the guard armed');
+    $('#cancel').click();
+    // A stale timer must not act after the card went away.
+    finish(); const stale = $('#discard').onclick(); $('#confirm-yes').click(); await stale;
+    await sleep(resultGuardMs + 100);
+    assert(!result.inert && document.activeElement !== $('#save-reading'), 'Stale guard timer acted after discard');
+  } finally {
+    if (session) $('#cancel').click();
+    if (pending) { pending = null; resetCounter(); }
+    fakeNow = 0;
+  }
+});
 output.textContent = 'BROWSER CHECK COMPLETE\\n' + results.join('\\n');
 document.title = results.some(line=>line.startsWith('FAIL')) ? 'Pawbreath checks FAILED' : 'Pawbreath checks PASSED';
 `;
@@ -604,7 +1035,22 @@ const updates = replaced(replaced(readFileSync(new URL('updates.mjs', dist), 'ut
   "import { RELEASE } from './version.mjs';\n", ''), 'export ', '', true);
 const workerStub = `const harnessRegistration = Object.assign(new EventTarget(), {active:{}, waiting:null, installing:null, update:async()=>{}});
 const harnessServiceWorker = Object.assign(new EventTarget(), {controller:{}, register:async()=>harnessRegistration, getRegistration:async()=>harnessRegistration});`;
-const script = `window.testRun = crypto.randomUUID();\n(async () => {\n${version}\n${updates}\n${workerStub}\n${data}\n${tapSoundSource}\n${app}\n${checks}\n})().catch(error => { document.title = 'Pawbreath harness failed'; document.body.prepend(Object.assign(document.createElement('pre'), {textContent:error.stack})); });`;
+// The harness inlines modules by hand, in dependency order, into one function scope. Drift must fail loudly: the
+// inlined set must equal the modules app.js reaches (derived with the structure tests' import parser), no import or
+// export may survive, and no top-level name may be declared twice (duplicate functions would silently override;
+// names are read by V8's parser, so indentation and declaration form do not matter).
+const inlined = { 'version.mjs': version, 'updates.mjs': updates, 'data.mjs': data, 'tap-sound.mjs': tapSoundSource,
+  'replay.mjs': replaySource, 'history-chart.mjs': historyChartSource };
+const derived = [...reachableModules(path => readFileSync(new URL(path, dist), 'utf8'), ['./app.js'])].map(path => path.slice(2)).filter(name => name !== 'app.js');
+const listed = Object.keys(inlined);
+const missing = derived.filter(name => !listed.includes(name)), extra = listed.filter(name => !derived.includes(name));
+if (missing.length || extra.length) throw new Error(`Harness inlined modules differ from app.js's import graph: missing [${missing}], extra [${extra}]`);
+const pieces = { ...inlined, 'app.js': app, 'worker stub': workerStub, checks };
+for (const [piece, source] of Object.entries(pieces)) {
+  if (/^\s*(?:import|export)\s/m.test(source)) throw new Error(`Harness piece ${piece} still has an import or export line`);
+}
+assertNoTopLevelCollisions(pieces);
+const script = `window.testRun = crypto.randomUUID();\n(async () => {\n${version}\n${updates}\n${workerStub}\n${data}\n${tapSoundSource}\n${replaySource}\n${historyChartSource}\n${app}\n${checks}\n})().catch(error => { document.title = 'Pawbreath harness failed'; document.body.prepend(Object.assign(document.createElement('pre'), {textContent:error.stack})); });`;
 const outputPath = process.argv[2] || '/tmp/pawbreath-browser-check.html';
 let result = replaced(html, '  <script type="module" src="./app.js"></script>', '');
 result = replaced(result, /(src|href)="\.\/([^"#]+)"/g, (_, attr, path) => `${attr}="${new URL(path, dist).href}"`);

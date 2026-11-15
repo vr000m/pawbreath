@@ -2,16 +2,151 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { validateDog, validateReading, validateBackup, makeBackup, readBackupFile, toCsv, respiratoryRate, manualDate,
-  CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId } from '../dist/data.mjs';
+  CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId, newestFirst, NEWEST_READABLE_VERSION, READABLE_VERSIONS,
+  TIMING_VERSION } from '../dist/data.mjs';
+import * as dataModule from '../dist/data.mjs';
 
 const dog = { id: 'dog-1', name: 'Milo', threshold: null, photo: '' };
 const reading = { id: 'reading-1', dogId: dog.id, date: '2026-11-12T21:00:00.000Z', count: 12, seconds: 30, rate: 24, notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
 const backup = () => ({ format: 'pawbreath', version: 2, dogs: [{ ...dog }], readings: [{ ...reading }] });
 
+// Contract: newestFirst is the one reading order, used by both the History list and the replay queue.
+test('newestFirst orders by date descending, then id by code unit, never by locale, across the whole space', () => {
+  const at = (id, date) => ({ ...reading, id, date });
+  const same = '2026-11-14T12:00:00.000Z', older = '2026-11-13T12:00:00.000Z', newer = '2026-11-15T12:00:00.000Z';
+  // Equal date and equal id: neither comes first.
+  assert.equal(newestFirst(at('x', same), at('x', same)), 0);
+  // Equal date, different ids: code-unit order, antisymmetric.
+  assert.ok(newestFirst(at('a', same), at('b', same)) < 0 && newestFirst(at('b', same), at('a', same)) > 0);
+  // Different dates: the newer comes first whatever the ids, including an equal id.
+  for (const [first, second] of [['z', 'a'], ['a', 'z'], ['x', 'x']]) {
+    assert.ok(newestFirst(at(first, newer), at(second, older)) < 0, `${first}/${second}`);
+    assert.ok(newestFirst(at(second, older), at(first, newer)) > 0, `${first}/${second}`);
+  }
+  const items = [at('b', same), at('old', older), at('a', same), at('B', same), at('\u00e9', same), at('new', newer)];
+  // 'B' (U+0042) < 'a' < 'b' < 'e-acute' (U+00E9) by code unit; localeCompare would put 'a' before 'B'.
+  assert.deepEqual(items.sort(newestFirst).map(r => r.id), ['new', 'B', 'a', 'b', '\u00e9', 'old']);
+});
+
 test('rate calculation retains raw count and handles both supported durations', () => {
   assert.equal(respiratoryRate(12, 30), 24);
   assert.equal(respiratoryRate(19, 60), 19);
   assert.deepEqual(validateReading(reading), reading);
+});
+
+test('tap traces are dense, ordered, timed-only and copied without fabricating legacy timing', () => {
+  const timed = { ...reading, count: 3, rate: 6, tapOffsetsMs: [0, 0, 29999] };
+  const checked = validateReading(timed);
+  timed.tapOffsetsMs[0] = 20;
+  assert.deepEqual(checked.tapOffsetsMs, [0, 0, 29999]);
+  checked.tapOffsetsMs[1] = 10;
+  assert.deepEqual(timed.tapOffsetsMs, [20, 0, 29999]);
+  assert.ok(!Object.hasOwn(validateReading(reading), 'tapOffsetsMs'));
+  for (const offsets of [null, undefined, [], [0, 1], [0, 1, 2, 3], [-1, 0, 1],
+    [0, 30000, 30000], [0, 2, 1], [0, 1.1, 2], [0, NaN, 2], [0, Infinity, 2],
+    [0, '1', 2], [0, , 2], new Uint16Array([0, 1, 2])]) {
+    assert.throws(() => validateReading({ ...timed, tapOffsetsMs: offsets }));
+  }
+  assert.throws(() => validateReading({ ...timed, source: 'manual', count: null, seconds: null }));
+  assert.deepEqual(validateReading({ ...timed, seconds: 60, rate: 3, tapOffsetsMs: [1, 30000, 59999] }).tapOffsetsMs,
+    [1, 30000, 59999]);
+});
+
+test('format 3 preserves traces; versions 1 and 2 stay untimed, export as format 2 and cannot smuggle timing', () => {
+  const traced = { ...reading, count: 3, rate: 6, tapOffsetsMs: [3, 1301, 29000] };
+  const input = { ...backup(), version: 3, readings: [traced] };
+  const exported = makeBackup(input);
+  assert.equal(exported.version, 3);
+  assert.deepEqual(validateBackup(JSON.parse(JSON.stringify(exported))), input);
+  traced.tapOffsetsMs[0] = 4;
+  assert.equal(exported.readings[0].tapOffsetsMs[0], 3);
+  const { tapOffsetsMs: _trace, ...untimed } = traced;
+  assert.equal(toCsv(input), toCsv({ ...input, readings: [untimed] }));
+  for (const version of [1, 2]) {
+    const legacy = { ...backup(), version };
+    assert.equal(validateBackup(legacy).version, 2);
+    assert.ok(!Object.hasOwn(validateBackup(legacy).readings[0], 'tapOffsetsMs'));
+    assert.equal(makeBackup(legacy).version, 2);
+    assert.throws(() => validateBackup({ ...input, version }), /version 3/);
+  }
+});
+
+// Contract: the readable formats, the import gate and its error message all come from NEWEST_READABLE_VERSION;
+// no export writes that number unless a reading carries timing.
+test('import accepts formats 1 up to NEWEST_READABLE_VERSION and the error names exactly that set', () => {
+  assert.ok(!('VERSION' in dataModule), 'the ambiguous VERSION export must stay renamed');
+  assert.equal(NEWEST_READABLE_VERSION, 3);
+  assert.deepEqual(READABLE_VERSIONS, [1, 2, 3]);
+  assert.ok(Object.isFrozen(READABLE_VERSIONS));
+  for (const version of READABLE_VERSIONS) assert.equal(validateBackup({ ...backup(), version }).version, 2);
+  for (const version of [0, NEWEST_READABLE_VERSION + 1, '3', null]) {
+    assert.throws(() => validateBackup({ ...backup(), version }), { message: 'Choose a Pawbreath version 1, 2 or 3 backup (.json).' });
+  }
+  assert.equal(makeBackup(backup()).version, 2, 'an untimed export must not write the newest readable version');
+});
+
+// Contract: the timing gate and its error message both come from TIMING_VERSION; no version number is written
+// into a data.mjs message by hand, so a later format bump cannot leave the text naming the wrong version.
+test('the tap-timing gate message names TIMING_VERSION and data.mjs messages hard-code no version number', () => {
+  assert.equal(TIMING_VERSION, 3);
+  const timed = { ...backup(), readings: [{ ...reading, tapOffsetsMs: Array.from({ length: 12 }, (_, i) => i * 1000) }] };
+  for (const version of READABLE_VERSIONS.filter(value => value < TIMING_VERSION)) {
+    assert.throws(() => validateBackup({ ...timed, version }),
+      { message: `Recorded tap timing requires a version ${TIMING_VERSION} backup.` });
+  }
+  const source = readFileSync(new URL('../dist/data.mjs', import.meta.url), 'utf8');
+  const literals = [...source.matchAll(/(['"`])((?:\\.|(?!\1)[^\\\n])*)\1/g)].map(match => match[2]);
+  assert.deepEqual(literals.filter(text => /\bversions? \d/.test(text)), [], 'a data.mjs message hard-codes a version number');
+});
+
+// Contract: the export version is the lowest format able to represent the snapshot (2 without tap timing, 3 with
+// it); makeBackup and validateBackup are a round-trip pair; an app on 1.1.0 (formats 1 and 2 only) can restore every
+// format 2 export. State space: {no timed readings, mixed, all timed, empty journal} x {v1, v2, v3 import}.
+const OLD_READING_FIELDS = ['id', 'dogId', 'date', 'count', 'seconds', 'rate', 'notes', 'source', 'context', 'uncertain'];
+// The 1.1.0 validateBackup gate and reading whitelist (main:dist/data.mjs): versions 1 and 2, fields above only.
+function oldAppAccepts(file) {
+  return file.format === 'pawbreath' && [1, 2].includes(file.version) &&
+    Object.keys(file).every(key => ['format', 'version', 'dogs', 'readings', 'exportedAt'].includes(key)) &&
+    file.readings.every(item => Object.keys(item).every(key => OLD_READING_FIELDS.includes(key)));
+}
+test('exports use format 2 until a reading carries tap timing; old apps restore every format 2 export', () => {
+  const timed = (id, offsets) => ({ ...reading, id, count: offsets.length, rate: respiratoryRate(offsets.length, 30), tapOffsetsMs: offsets });
+  const untimed = id => ({ ...reading, id });
+  const manual = id => ({ ...reading, id, source: 'manual', count: null, seconds: null, rate: 23.5 });
+  const journals = {
+    'no timed readings': [untimed('u-1'), manual('m-1')],
+    mixed: [untimed('u-1'), timed('t-1', [5, 900, 29999]), manual('m-1')],
+    'all timed': [timed('t-1', [0, 0, 12]), timed('t-2', [100, 200])],
+    'empty journal': [],
+  };
+  for (const [name, readings] of Object.entries(journals)) {
+    const hasTiming = readings.some(item => 'tapOffsetsMs' in item);
+    for (const importVersion of [1, 2, 3]) {
+      const label = `${name}, v${importVersion} import`;
+      const file = { format: 'pawbreath', version: importVersion, dogs: [{ ...dog }], readings: structuredClone(readings) };
+      if (hasTiming && importVersion < 3) {
+        // The timing version gate stays: a v1/v2 file carrying tapOffsetsMs is rejected.
+        assert.throws(() => validateBackup(file), /version 3/, label);
+        continue;
+      }
+      const imported = validateBackup(file);
+      assert.deepEqual(imported.readings, readings, label);
+      const exported = makeBackup(imported);
+      assert.equal(exported.version, hasTiming ? 3 : 2, label);
+      assert.equal(imported.version, exported.version, `${label}: validateBackup reports the export version`);
+      const { exportedAt, ...body } = JSON.parse(JSON.stringify(exported));
+      assert.ok(exportedAt, label);
+      // Round-trip pair: validating an export reproduces it exactly, traces included.
+      assert.deepEqual(validateBackup(body), body, label);
+      assert.deepEqual(body.readings, readings, label);
+      if (hasTiming) {
+        assert.ok(!oldAppAccepts(exported), `${label}: a timed export must not look readable by 1.1.0`);
+      } else {
+        assert.ok(exported.readings.every(item => !Object.hasOwn(item, 'tapOffsetsMs')), label);
+        assert.ok(oldAppAccepts(exported), `${label}: 1.1.0 cannot restore this export`);
+      }
+    }
+  }
 });
 
 test('backup round-trip preserves Unicode, multiline notes, and literal markup', () => {
@@ -70,7 +205,7 @@ test('file reader rejects invalid JSON, invalid records and unreadable files', a
 
 test('reject incompatible, incomplete, duplicate and orphaned backups', () => {
   for (const modify of [
-    value => { value.version = 3; },
+    value => { value.version = 4; },
     value => { delete value.dogs; },
     value => { value.dogs.push({ ...dog }); },
     value => { value.readings.push({ ...reading }); },

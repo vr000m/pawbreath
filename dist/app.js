@@ -1,8 +1,10 @@
 import { openDatabase, readAll, saveDog, saveReading, deleteReading, restoreBackup,
   readBackupFile, makeBackup, toCsv, respiratoryRate, manualDate, manualDialogAction,
-  CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId } from './data.mjs';
+  CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId, newestFirst } from './data.mjs';
 import { createUpdateMonitor } from './updates.mjs';
 import { createTapSound } from './tap-sound.mjs';
+import { createReplayController, replayableReadings } from './replay.mjs';
+import { createHistoryChart } from './history-chart.mjs';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -31,12 +33,104 @@ const counterCard = document.querySelector('.counter-card');
 const counterHome = document.createComment('Counter home');
 counterCard.before(counterHome);
 const countingDialog = document.querySelector('#counting-dialog');
+// Idle line after the tick's availability check: audio was running when the box was ticked.
 const soundOnStatus = 'Tap sound on. Device volume or mute may prevent sound.';
 const soundUnavailableStatus = 'Tap sound is not available on this device.';
+// Start shows this from the checkbox alone, before audio is confirmed running, so it claims only the intent.
+const soundCountStatus = 'Tap sound is on for this count.';
+const countHint = 'Keep this screen open while counting.';
+// During a count the sound status (if any) comes first and the hint always stays.
+const countStatus = sound => sound ? `${sound} ${countHint}` : countHint;
+// Taps meant for the big target can land on the result card just after a count ends; it ignores input this long.
+const resultGuardMs = 600;
+let resultGuardTimer = null;
 let soundCheck = 0;
+// The only way the app silences tap audio. Suspending makes a pending detect() resolve false, so every stop
+// also invalidates that check: its result would describe this suspend, not whether the device can play sound.
+function stopTapSound() {
+  soundCheck++;
+  tapSound.stop();
+}
 let noticeAnnouncement;
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel('pawbreath-updates') : null;
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+// What History last rendered: replay and chart hit-testing use this list, not a fresh filter at click time,
+// so the controls always act on the readings the person can see and that were validated as replayable.
+let visibleReadings = [];
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const historyChart = createHistoryChart({ canvas: $('#history-chart'), timeline: $('#tap-timeline'), reducedMotion });
+// The controller is the one record of whether playback runs (replay.active); the chart only paints the frames it gets.
+const replay = createReplayController({ onFrame: renderReplay, onEnd: () => clearReplay('Replay finished.') });
+// The reading whose status, row cue, Stop button and timeline were last rendered (null while idle), so frames for
+// the same reading update only the progress text and ring.
+let renderedReplayId = null;
+
+// The detail panel keeps its layout space; inactive, it is invisible, unfocusable and hidden from assistive tech.
+function setReplayDetail(active) {
+  const detail = $('#replay-detail');
+  detail.inert = !active;
+  detail.setAttribute('aria-hidden', String(!active));
+}
+
+function stopReplay(message = 'Replay stopped.') {
+  const wasActive = replay.active;
+  replay.stop();
+  if (wasActive) clearReplay(message);
+}
+
+// Playback has ended (stopped, replaced or finished): clear the frame and restore the idle controls.
+function clearReplay(message) {
+  historyChart.setReplay(null);
+  renderedReplayId = null;
+  const stop = $('#replay-stop');
+  // A disabled Stop button must not strand keyboard and screen-reader focus.
+  const refocus = document.activeElement === stop && !document.hidden && !$('#replay-all').disabled;
+  $('#replay-status').textContent = message;
+  setReplayDetail(false);
+  stop.disabled = true;
+  if (refocus) $('#replay-all').focus({ preventScroll: true });
+  for (const row of $$('.reading-row')) row.classList.remove('replaying');
+  drawReplayPoint();
+}
+
+function startReplay(entries) {
+  if (page !== 'history' || document.hidden || session || pending || $$('dialog[open]').length) return;
+  stopReplay();
+  if (replay.start(entries)) {
+    $('#replay-stop').focus({ preventScroll: true });
+    $('#history-chart').scrollIntoView({ block: 'center' });
+  }
+}
+
+function renderReplay(state) {
+  historyChart.setReplay(state);
+  if (state.entry.id !== renderedReplayId) {
+    renderedReplayId = state.entry.id;
+    $('#replay-stop').disabled = false;
+    setReplayDetail(true);
+    $('#replay-status').textContent = `Replaying ${dateFormat.format(new Date(state.entry.date))} · ${state.index + 1} of ${state.total}.`;
+    for (const row of $$('.reading-row')) row.classList.toggle('replaying', row.dataset.readingId === state.entry.id);
+    historyChart.drawTimeline();
+  }
+  // Frames arrive every display refresh; the text changes at most once a second or per tap.
+  const progress = `${Math.floor(state.elapsedMs / 1000)} / ${state.entry.seconds} seconds · ${state.tapCount} / ${state.entry.count} recorded taps`;
+  if ($('#replay-progress').textContent !== progress) $('#replay-progress').textContent = progress;
+  drawReplayPoint();
+}
+
+// The chart is drawn only while History is the page shown.
+function drawReplayPoint() {
+  if (page === 'history') historyChart.paintRing();
+}
+
+$('#replay-all').onclick = () => startReplay(visibleReadings);
+$('#replay-stop').onclick = () => stopReplay();
+$('#history-chart').onclick = event => {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const point = historyChart.pointAt(event.clientX - rect.left, event.clientY - rect.top);
+  if (point) startReplay([point.entry]);
+};
+reducedMotion.addEventListener('change', () => { if (replay.active) drawReplayPoint(); });
 
 function showError(error) {
   $('#error').textContent = error.message || 'Something went wrong. Please try again.';
@@ -73,10 +167,11 @@ function readingDetails(reading) {
   return `${source} · ${context}${entry.uncertain ? ' · Uncertain' : ''}`;
 }
 function readings() {
-  return snapshot.readings.filter(item => item.dogId === selectedId).sort((a, b) => b.date.localeCompare(a.date));
+  return snapshot.readings.filter(item => item.dogId === selectedId).sort(newestFirst);
 }
 
 function confirmAction(title, message, label = 'Continue') {
+  stopReplay();
   return new Promise(resolve => {
     const dialog = $('#confirm-dialog');
     $('#confirm-title').textContent = title;
@@ -181,8 +276,13 @@ function filteredReadings() {
 }
 
 function renderHistory() {
+  stopReplay();
   $('#history-dog').textContent = dog() ? `${dog().name}'s breathing journal.` : 'Add a dog and save your first reading.';
   const entries = filteredReadings();
+  visibleReadings = entries;
+  const replayIds = new Set(replayableReadings(entries).map(entry => entry.id));
+  historyChart.show(entries, replayIds);
+  $('#replay-all').disabled = replayIds.size === 0;
   $('#reading-total').textContent = `${entries.length} ${entries.length === 1 ? 'reading' : 'readings'}`;
   $('#chart-empty').hidden = entries.length > 0;
   $('#history-chart').hidden = entries.length === 0;
@@ -195,6 +295,7 @@ function renderHistory() {
   for (const entry of entries) {
     const row = document.createElement('article');
     row.className = 'reading-row';
+    row.dataset.readingId = entry.id;
     const details = document.createElement('div');
     details.className = 'reading-details';
     const date = document.createElement('time');
@@ -204,6 +305,19 @@ function renderHistory() {
     meta.className = 'reading-meta';
     meta.textContent = readingDetails(entry);
     details.append(date, meta);
+    if (replayIds.has(entry.id)) {
+      const play = document.createElement('button');
+      play.className = 'text-button replay-reading';
+      play.textContent = 'Replay taps';
+      play.setAttribute('aria-label', `Replay recorded taps from ${date.textContent}`);
+      play.onclick = () => startReplay([entry]);
+      details.append(play);
+    } else {
+      const unavailable = document.createElement('p');
+      unavailable.className = 'reading-meta';
+      unavailable.textContent = 'Tap timing unavailable';
+      details.append(unavailable);
+    }
     if (entry.notes) {
       const notes = document.createElement('p');
       notes.textContent = entry.notes;
@@ -234,48 +348,9 @@ function renderHistory() {
   if (page === 'history' && entries.length) requestAnimationFrame(drawChart);
 }
 
+// Redraws (resize) reuse what History rendered; a fresh filter would apply a later Date.now() cutoff.
 function drawChart() {
-  const canvas = $('#history-chart');
-  const entries = [...filteredReadings()].reverse();
-  if (!entries.length || canvas.hidden || page !== 'history') return;
-  const width = canvas.clientWidth;
-  const height = canvas.clientHeight;
-  const scale = window.devicePixelRatio || 1;
-  canvas.width = width * scale;
-  canvas.height = height * scale;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(scale, scale);
-  const left = 34, right = width - 15, top = 15, bottom = height - 32;
-  const maximum = Math.max(10, ...entries.map(item => item.rate), dog()?.threshold ?? 0);
-  const ceiling = Math.ceil(maximum / 10) * 10 + 10;
-  const start = Date.parse(entries[0].date);
-  const end = Date.parse(entries.at(-1).date);
-  const x = date => start === end ? (left + right) / 2 : left + (Date.parse(date) - start) / (end - start) * (right - left);
-  const y = rate => bottom - rate / ceiling * (bottom - top);
-  ctx.font = '11px system-ui';
-  ctx.fillStyle = '#71806a';
-  ctx.textAlign = 'right';
-  for (let i = 0; i <= 4; i++) {
-    const value = ceiling * i / 4;
-    ctx.fillText(String(Math.round(value)), left - 9, y(value) + 4);
-    ctx.strokeStyle = '#e4e9df';
-    ctx.beginPath(); ctx.moveTo(left, y(value)); ctx.lineTo(right, y(value)); ctx.stroke();
-  }
-  if (dog()?.threshold) {
-    ctx.strokeStyle = '#b98640'; ctx.setLineDash([5, 5]);
-    ctx.beginPath(); ctx.moveTo(left, y(dog().threshold)); ctx.lineTo(right, y(dog().threshold)); ctx.stroke();
-    ctx.setLineDash([]);
-  }
-  ctx.strokeStyle = '#42745a'; ctx.lineWidth = 2;
-  ctx.beginPath();
-  entries.forEach((entry, index) => index === 0 ? ctx.moveTo(x(entry.date), y(entry.rate)) : ctx.lineTo(x(entry.date), y(entry.rate)));
-  ctx.stroke();
-  for (const entry of entries) {
-    ctx.fillStyle = '#42745a'; ctx.beginPath(); ctx.arc(x(entry.date), y(entry.rate), 4, 0, Math.PI * 2); ctx.fill();
-  }
-  const label = timestamp => new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(timestamp));
-  ctx.fillStyle = '#71806a'; ctx.textAlign = 'left'; ctx.fillText(label(start), left, height - 8);
-  if (start !== end) { ctx.textAlign = 'right'; ctx.fillText(label(end), right, height - 8); }
+  historyChart.draw({ visible: page === 'history', threshold: dog()?.threshold });
 }
 
 function setLocked(locked) {
@@ -285,12 +360,35 @@ function setLocked(locked) {
   $('#tap-sound').disabled = locked;
 }
 
+// The result card is inert until the timer fires. Every exit that removes the card (save, discard, reset, a new count)
+// clears it, so inert cannot stay stuck. #counter-status, which announces the result, lives outside the card.
+function clearResultGuard() {
+  clearTimeout(resultGuardTimer);
+  resultGuardTimer = null;
+  $('#result').inert = false;
+}
+
+function guardResult() {
+  clearResultGuard();
+  $('#result').inert = true;
+  resultGuardTimer = setTimeout(() => {
+    resultGuardTimer = null;
+    $('#result').inert = false;
+    // Focus could not move into the inert card; move it to Save now, unless the person already went elsewhere.
+    if (pending && (!document.activeElement || document.activeElement === document.body)) $('#save-reading').focus();
+  }, resultGuardMs);
+}
+
 function leaveCountingView() {
   const moved = counterCard.parentElement === countingDialog;
   if (countingDialog.open) countingDialog.close();
   if (moved) counterHome.after(counterCard);
-  tapSound.stop();
-  if (moved) announceUpdateNotice();
+  // Only a count ending releases audio and supersedes a pending tap-sound check. A reset that ended no count
+  // (refresh, duration, dog select, save, discard) leaves the tick's check to report the device.
+  if (moved) {
+    stopTapSound();
+    announceUpdateNotice();
+  }
   return moved;
 }
 
@@ -318,6 +416,7 @@ function resetCounter(message = '') {
   $('#start').disabled = !dog() || !db;
   $('#undo').hidden = true;
   $('#cancel').hidden = true;
+  clearResultGuard();
   $('#result').hidden = true;
   $('#reading-notes').value = '';
   $('#reading-context').value = 'not-recorded';
@@ -349,11 +448,12 @@ function completeCount() {
   if (!finished) return;
   stopTimer();
   session = null;
-  if (!finished.count) { resetCounter('No breaths were counted. Please try again.'); return; }
+  const count = finished.tapOffsetsMs.length;
+  if (!count) { resetCounter('No breaths were counted. Please try again.'); return; }
   leaveCountingView();
   pending = { id: crypto.randomUUID(), dogId: finished.dogId, date: finished.date,
-    count: finished.count, seconds: finished.seconds,
-    rate: respiratoryRate(finished.count, finished.seconds), notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
+    count, seconds: finished.seconds, tapOffsetsMs: [...finished.tapOffsetsMs],
+    rate: respiratoryRate(count, finished.seconds), notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
   $('#timer-progress').value = finished.seconds;
   $('#timer-label').textContent = 'Measurement complete';
   $('#breath-button').disabled = true;
@@ -366,9 +466,9 @@ function completeCount() {
   $('#result-threshold').textContent = exceeds ? `At or above the threshold you entered: ${dog().threshold} breaths/min. Follow the guidance your vet gave you.` : 'Review your count, add any notes, and save this moment.';
   $('#result-threshold').className = exceeds ? 'threshold-note' : 'muted';
   $('#counter-status').textContent = 'Reading ready to save.';
-  $('#counter-label').textContent = finished.count === 1 ? 'breath counted' : 'breaths counted';
-  $('#counter-instruction').textContent = `${finished.count} breaths counted in ${finished.seconds} seconds.`;
-  $('#save-reading').focus();
+  $('#counter-label').textContent = count === 1 ? 'breath counted' : 'breaths counted';
+  $('#counter-instruction').textContent = `${count} breaths counted in ${finished.seconds} seconds.`;
+  guardResult();
 }
 
 function tick() {
@@ -381,8 +481,10 @@ function tick() {
 
 $('#start').onclick = async () => {
   if (!dog() || session || pending) return;
+  stopReplay();
+  clearResultGuard();
   $('#error').hidden = true;
-  session = { dogId: selectedId, date: new Date().toISOString(), started: performance.now(), seconds: duration, count: 0 };
+  session = { dogId: selectedId, date: new Date().toISOString(), started: performance.now(), seconds: duration, tapOffsetsMs: [] };
   setLocked(true);
   $('#start').hidden = true;
   $('#undo').hidden = false;
@@ -392,7 +494,7 @@ $('#start').onclick = async () => {
   $('#breath-button').classList.add('active');
   $('#counter-number').textContent = '0';
   $('#counter-instruction').textContent = 'Watch your dog. Tap the large area once per breath.';
-  $('#counter-status').textContent = $('#tap-sound').checked ? soundOnStatus : 'Keep this screen open while counting.';
+  $('#counter-status').textContent = countStatus($('#tap-sound').checked ? soundCountStatus : '');
   countingDialog.append(counterCard);
   try { countingDialog.showModal(); }
   catch { cancelCount('Could not open counting. Please try again.'); return; }
@@ -409,9 +511,11 @@ $('#start').onclick = async () => {
 $('#breath-button').onclick = event => {
   if (event.detail > 0) event.preventDefault();
   if (!session) return;
-  if (performance.now() - session.started >= session.seconds * 1000) { completeCount(); return; }
-  session.count++;
-  $('#counter-number').textContent = session.count;
+  const elapsed = performance.now() - session.started;
+  if (elapsed >= session.seconds * 1000) { completeCount(); return; }
+  session.tapOffsetsMs.push(Math.floor(elapsed));
+  // The count is always the trace length; no separate counter can drift from it.
+  $('#counter-number').textContent = session.tapOffsetsMs.length;
   $('#undo').disabled = false;
   tapSound.play();
 };
@@ -419,26 +523,32 @@ $('#breath-button').onclick = event => {
 // Unavailable audio unticks the box, so the checkbox always matches whether a count will try to sound.
 $('#tap-sound').onchange = async () => {
   const box = $('#tap-sound');
-  const attempt = ++soundCheck;
   const status = $('#counter-status');
   if (!box.checked) {
+    // Unticking is the opt-out: silence and suspend audio started by the tick; stopTapSound() also makes a pending
+    // detect() ignore its result. Counting never reads audio state, and the box is locked while a count runs.
+    stopTapSound();
     if (!session && !pending && [soundOnStatus, soundUnavailableStatus].includes(status.textContent)) {
       status.textContent = dog() ? 'Start the timer, then tap for each breath.' : 'Add your dog to begin.';
     }
     return;
   }
+  // A count ending (or an untick) before detect() settles supersedes this tick: the box stays ticked, so the next
+  // count still attempts sound, and the count's own message stays.
+  const attempt = ++soundCheck;
   const available = await tapSound.detect();
   if (attempt !== soundCheck || !box.checked) return;
   if (!available) { box.checked = false; tapSound.prepare(false); }
-  if (!pending) status.textContent = available ? soundOnStatus : soundUnavailableStatus;
+  // A check that settles mid-count keeps the hint beside the sound status.
+  if (!pending) status.textContent = session ? countStatus(available ? soundCountStatus : soundUnavailableStatus) : available ? soundOnStatus : soundUnavailableStatus;
 };
 $('#breath-button').onkeydown = event => { if (event.repeat) event.preventDefault(); };
 $('#undo').onclick = () => {
   if (!session) return;
   if (performance.now() - session.started >= session.seconds * 1000) { completeCount(); return; }
-  session.count = Math.max(0, session.count - 1);
-  $('#counter-number').textContent = session.count;
-  $('#undo').disabled = session.count === 0;
+  session.tapOffsetsMs.pop();
+  $('#counter-number').textContent = session.tapOffsetsMs.length;
+  $('#undo').disabled = session.tapOffsetsMs.length === 0;
 };
 $('#cancel').onclick = () => cancelCount();
 countingDialog.addEventListener('cancel', event => {
@@ -450,10 +560,11 @@ countingDialog.addEventListener('close', () => {
   if (!countingDialog.open && session) cancelCount();
 });
 document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopReplay();
   if (document.hidden && session) cancelCount('The count stopped when the app left the screen. Please start a new measurement.');
   if (!document.hidden && db && !session && !pending) refresh().catch(showError);
 });
-window.addEventListener('pagehide', () => { if (session) cancelCount(); });
+window.addEventListener('pagehide', () => { stopReplay(); if (session) cancelCount(); });
 window.addEventListener('beforeunload', event => {
   if (session || pending || saving || (manualDraft && manualDirty)) { event.preventDefault(); event.returnValue = ''; }
 });
@@ -484,6 +595,7 @@ $('#discard').onclick = async () => {
 
 function openManual() {
   if (!db || !dog() || session || pending || saving || manualDraft) return;
+  stopReplay();
   manualDraft = { id: crypto.randomUUID(), dogId: selectedId };
   manualDirty = false;
   $('#manual-form').reset();
@@ -566,6 +678,7 @@ for (const button of $$('[data-duration]')) button.onclick = () => {
 
 function showPage(next) {
   if (session || pending || !['measure', 'history', 'settings'].includes(next)) return;
+  stopReplay();
   page = next;
   for (const section of $$('.page')) section.hidden = section.id !== `${page}-page`;
   for (const button of $$('nav [data-page]')) {
@@ -595,7 +708,7 @@ function revealSavedReading(entry) {
   if (historyContext !== 'all' && historyContext !== entry.context) setHistoryContext('all');
 }
 $('#history-context').onchange = () => { setHistoryContext($('#history-context').value); renderHistory(); };
-window.addEventListener('resize', () => { if (page === 'history') drawChart(); });
+window.addEventListener('resize', () => { if (page === 'history') { drawChart(); historyChart.drawTimeline(); } });
 
 function previewPhoto() {
   $('#photo-preview').hidden = !photo;
@@ -606,6 +719,7 @@ function previewPhoto() {
 
 function openDog(id = null) {
   if (session || pending || !db) return;
+  stopReplay();
   const current = snapshot.dogs.find(item => item.id === id);
   editId = current?.id ?? null;
   photo = current?.photo ?? '';
