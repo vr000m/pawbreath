@@ -4,6 +4,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { reachableModules } from '../scripts/lib/import-graph.mjs';
+import { assertNoTopLevelCollisions } from '../scripts/lib/top-level-names.mjs';
 
 const dist = new URL('../dist/', import.meta.url);
 // Every substitution must apply. A silently skipped replace would test an app that does not exist.
@@ -936,7 +937,8 @@ const workerStub = `const harnessRegistration = Object.assign(new EventTarget(),
 const harnessServiceWorker = Object.assign(new EventTarget(), {controller:{}, register:async()=>harnessRegistration, getRegistration:async()=>harnessRegistration});`;
 // The harness inlines modules by hand, in dependency order, into one function scope. Drift must fail loudly: the
 // inlined set must equal the modules app.js reaches (derived with the structure tests' import parser), no import or
-// export may survive, and no top-level name may be declared twice (duplicate functions would silently override).
+// export may survive, and no top-level name may be declared twice (duplicate functions would silently override;
+// names are read by V8's parser, so indentation and declaration form do not matter).
 const inlined = { 'version.mjs': version, 'updates.mjs': updates, 'data.mjs': data, 'tap-sound.mjs': tapSoundSource,
   'replay.mjs': replaySource, 'history-chart.mjs': historyChartSource };
 const derived = [...reachableModules(path => readFileSync(new URL(path, dist), 'utf8'), ['./app.js'])].map(path => path.slice(2)).filter(name => name !== 'app.js');
@@ -944,15 +946,10 @@ const listed = Object.keys(inlined);
 const missing = derived.filter(name => !listed.includes(name)), extra = listed.filter(name => !derived.includes(name));
 if (missing.length || extra.length) throw new Error(`Harness inlined modules differ from app.js's import graph: missing [${missing}], extra [${extra}]`);
 const pieces = { ...inlined, 'app.js': app, 'worker stub': workerStub, checks };
-const declaredBy = new Map();
 for (const [piece, source] of Object.entries(pieces)) {
   if (/^\s*(?:import|export)\s/m.test(source)) throw new Error(`Harness piece ${piece} still has an import or export line`);
-  if (/^(?:const|let|var)\s+(?:[[{]|[\w$]+\s*,)/m.test(source)) throw new Error(`Harness piece ${piece} has a top-level declaration form the duplicate check cannot read`);
-  for (const [, name] of source.matchAll(/^(?:async\s+)?(?:function\*?\s*|class\s+|(?:const|let|var)\s+)([A-Za-z_$][\w$]*)/gm)) {
-    if (declaredBy.has(name)) throw new Error(`Harness scope collision: ${name} is declared by ${declaredBy.get(name)} and ${piece}`);
-    declaredBy.set(name, piece);
-  }
 }
+assertNoTopLevelCollisions(pieces);
 const script = `window.testRun = crypto.randomUUID();\n(async () => {\n${version}\n${updates}\n${workerStub}\n${data}\n${tapSoundSource}\n${replaySource}\n${historyChartSource}\n${app}\n${checks}\n})().catch(error => { document.title = 'Pawbreath harness failed'; document.body.prepend(Object.assign(document.createElement('pre'), {textContent:error.stack})); });`;
 const outputPath = process.argv[2] || '/tmp/pawbreath-browser-check.html';
 let result = replaced(html, '  <script type="module" src="./app.js"></script>', '');
