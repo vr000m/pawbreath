@@ -88,3 +88,7 @@ The [recorded tap replay plan](20261114-feature-breath-timing-replay.md) superse
 ### 2026-11-14 owner decision: lowest export format
 
 Narrowing "exports containing timing use format 3" above: a backup is format 2 when no reading carries tap timing, so installs on 1.1.0 can still restore it, and format 3 only when at least one reading does. Import accepts formats 1, 2 and 3; v1/v2 files carrying timing are rejected. See the [replay plan](20261114-feature-breath-timing-replay.md), round 3 part 2.
+
+## 15 November 2026 — documentation locations
+
+The README now introduces the app and links to detailed guides. Operational commands have moved to the [development guide](../development.md) and [deployment guide](../deployment.md); use, backup compatibility and update instructions are in the [user guide](../user-guide.md). This supersedes the README location referenced in the original architecture summary, without changing the application decisions. See the [documentation reorganisation plan](20261115-docs-readme-and-guides.md).
