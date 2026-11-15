@@ -8,6 +8,7 @@ User-visible changes are recorded here. Release dates record production deployme
 
 - An introduction at `/about` explains breath counting, heart-failure monitoring and vet-directed treatment, with attributed veterinary guidance and a sample journal screenshot. Includes iPhone/Android installation steps, local-storage and backup guidance, and a Settings link that opens in a new tab. The introduction needs an internet connection; the app and its offline guidance stay at the existing address.
 - A consistent footer on About, Measure, History and Settings keeps the same tagline and styling. Journal pages link to About in a new tab; About links back to the journal.
+- A shared footer divider separates navigation from page content. About keeps a compact header visible while scrolling; the journal header stays visible above phone widths, while phones retain their fixed bottom tabs.
 
 ## 1.2.0 — 14 November 2026
 

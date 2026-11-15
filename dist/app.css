@@ -766,7 +766,7 @@ h1 {
 }
 
 /* Keep footer styles aligned with about.css. */
-.site-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-block: 2rem; font-size: .8rem; line-height: 1.7; color: #56695f; overflow-wrap: anywhere; }
+.site-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: 2rem; border-top: 1px solid #d8e0d3; padding-block: 2rem; font-size: .8rem; line-height: 1.7; color: #56695f; overflow-wrap: anywhere; }
 .site-footer p { margin: 0; line-height: inherit; }
 .site-footer a { display: inline-flex; align-items: center; min-height: 44px; color: inherit; text-underline-offset: .2em; }
 .site-footer a:focus-visible { outline: 3px solid #a26e29; outline-offset: 5px; }
@@ -1293,6 +1293,15 @@ nav button[aria-current=page] svg .knob {
 /* Wide screens: the dog picker sits in the same place on Measure and History, left-aligned under the
    heading as on a phone, with the History period toggle beside it. */
 @media not all and (max-width:600px) {
+  html {
+    scroll-padding-top:114px;
+  }
+  .topbar {
+    position:sticky;
+    top:0;
+    z-index:4;
+    background:#f8f8f2;
+  }
   #measure-page .page-heading {
     display:block;
   }

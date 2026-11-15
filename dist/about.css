@@ -10,6 +10,7 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; }
+html { scroll-padding-top: calc(7rem + env(safe-area-inset-top)); }
 a { color: inherit; text-underline-offset: .2em; }
 a:focus-visible { outline: 3px solid #a26e29; outline-offset: 5px; }
 h1, h2, h3, p, figure { margin: 0; }
@@ -24,7 +25,8 @@ img { display: block; max-width: 100%; height: auto; }
 .small, .source-note, figcaption { font-size: .83rem; }
 .muted, .source-note, figcaption { color: var(--muted); }
 .source-note { line-height: 1.7; }
-.site-header { min-height: 104px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; border-bottom: 1px solid var(--line); }
+.site-header { position: sticky; top: 0; z-index: 1; padding-top: env(safe-area-inset-top); background: #f8f8f2; border-bottom: 1px solid var(--line); }
+.header-inner { min-height: 72px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .5rem 1rem; padding-block: .75rem; }
 .brand { display: inline-flex; align-items: center; font-size: 1.7rem; font-weight: 750; letter-spacing: -.07em; text-decoration: none; }
 .brand img { margin-right: .6rem; border-radius: 12px; flex-shrink: 0; }
 .brand span { color: #70965b; }
@@ -74,15 +76,13 @@ figcaption { margin-top: 1.8rem; text-align: center; line-height: 1.6; }
 .closing { padding: 64px 24px; text-align: center; background: #e7eedf; border-radius: 24px; }
 .closing h2 { margin-bottom: 1.75rem; }
 /* Keep footer styles aligned with app.css. */
-.site-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-block: 2rem; font-size: .8rem; line-height: 1.7; color: #56695f; overflow-wrap: anywhere; }
+.site-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: 2rem; border-top: 1px solid #d8e0d3; padding-block: 2rem; font-size: .8rem; line-height: 1.7; color: #56695f; overflow-wrap: anywhere; }
 .site-footer p { margin: 0; line-height: inherit; }
 .site-footer a { display: inline-flex; align-items: center; min-height: 44px; color: inherit; text-underline-offset: .2em; }
 .site-footer a:focus-visible { outline: 3px solid #a26e29; outline-offset: 5px; }
 .site-footer .footer-note { font-size: .75rem; }
-section[id] { scroll-margin-top: 24px; }
 @media (max-width: 760px) {
   .wrap { width: calc(100% - 40px); }
-  .site-header { min-height: 86px; }
   .brand { font-size: 1.4rem; }
   .brand img { width: 30px; height: 30px; }
   .small-button { padding: .65rem .8rem; font-size: .8rem; gap: .5rem; }
@@ -97,8 +97,8 @@ section[id] { scroll-margin-top: 24px; }
   .site-footer { flex-direction: column; align-items: flex-start; gap: .25rem; }
 }
 @media (max-width: 360px) {
+  html { scroll-padding-top: calc(10rem + env(safe-area-inset-top)); }
   .wrap { width: calc(100% - 32px); }
-  .site-header { flex-wrap: wrap; padding-block: 1rem; }
   .hero-actions { align-items: flex-start; flex-direction: column; }
   .install-card { padding: 1.15rem; }
 }
