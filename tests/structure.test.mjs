@@ -5,11 +5,10 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseAssets } from '../scripts/lib/precache-assets.mjs';
+import { staticImports, reachableModules } from '../scripts/lib/import-graph.mjs';
 
 const dist = new URL('../dist/', import.meta.url);
 const read = name => readFileSync(new URL(name, dist), 'utf8');
-const staticImports = source => [...source.matchAll(/^import\s+(?:\{([^}]*)\}\s+from\s+)?'(\.\/[^']+)';?$/gm)]
-  .map(([, names = '', path]) => ({ path, names: names.split(',').map(name => name.trim().split(/\s+as\s+/)[0]).filter(Boolean) }));
 
 // The shell's module graph, derived rather than listed: everything index.html and the manifest load, plus every
 // module reachable through static imports. A new module joins every check below without editing a list.
@@ -19,12 +18,7 @@ function shellGraph() {
   for (const [, path] of html.matchAll(/<(?:script|link)\b[^>]*(?:src|href)="(\.\/[^"#]+)"/g)) needed.add(path);
   for (const [, path] of html.matchAll(/<img\b[^>]*src="(\.\/[^"#]+)"/g)) needed.add(path);
   for (const icon of JSON.parse(read('manifest.webmanifest')).icons) needed.add(new URL(icon.src, 'https://x.test/').pathname.replace(/^\//, './'));
-  const queue = [...needed].filter(path => /\.m?js$/.test(path));
-  while (queue.length) {
-    for (const { path } of staticImports(read(queue.shift()))) {
-      if (!needed.has(path)) { needed.add(path); queue.push(path); }
-    }
-  }
+  for (const path of reachableModules(read, [...needed].filter(path => /\.m?js$/.test(path)))) needed.add(path);
   return needed;
 }
 const isModule = path => /\.m?js$/.test(path);
@@ -53,6 +47,14 @@ test('app.js decides replay activity from the controller, not from the chart mod
   const app = read('app.js');
   assert.ok(!/historyChart\.replay\b/.test(app), 'app.js reads historyChart.replay');
   assert.ok(/replay\.active\b/.test(app), 'app.js must ask the replay controller whether playback is active');
+});
+
+// The chart only records and paints frames. app.js decides when the replaying reading changed (status, row, Stop,
+// timeline) from the frame itself; the browser harness checks those updates fire once per reading.
+test('app.js calls historyChart.setReplay only as a statement and never uses its result', () => {
+  const calls = read('app.js').split('\n').filter(line => line.includes('historyChart.setReplay('));
+  assert.ok(calls.length >= 2, 'app.js must set and clear the chart replay frame');
+  for (const line of calls) assert.match(line, /^\s*historyChart\.setReplay\([^;]*\);\s*$/, `app.js uses the setReplay result: ${line.trim()}`);
 });
 
 // The History list and the replay queue share one reading order, owned by data.mjs with the other reading rules.

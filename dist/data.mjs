@@ -5,7 +5,7 @@ export const NEWEST_READABLE_VERSION = 3;
 export const READABLE_VERSIONS = Object.freeze(Array.from({ length: NEWEST_READABLE_VERSION }, (_, i) => i + 1));
 const readableList = `${READABLE_VERSIONS.slice(0, -1).join(', ')} or ${READABLE_VERSIONS.at(-1)}`;
 // The first backup format that may carry recorded tap timing. Later formats keep accepting it.
-const TIMING_VERSION = 3;
+export const TIMING_VERSION = 3;
 // Readings without tap timing fit format 2, which apps on 1.1.0 can still restore.
 const UNTIMED_VERSION = 2;
 // The single definition of measurement contexts. `label` is the form option, `filter` the History
@@ -148,7 +148,7 @@ export function validateBackup(input) {
   const dogs = input.dogs.map(validateDog);
   const readings = input.readings.map(reading => {
     requireValue(input.version >= TIMING_VERSION || !reading || !('tapOffsetsMs' in Object(reading)),
-      'Recorded tap timing requires a version 3 backup.');
+      `Recorded tap timing requires a version ${TIMING_VERSION} backup.`);
     return validateReading(reading);
   });
   const dogIds = new Set(dogs.map(dog => dog.id));

@@ -75,8 +75,10 @@ test('the chart keeps its own replay state, resets points on show and only rings
   assert.deepEqual(chart.points.map(point => point.entry.id), ['t']);
   assert.equal(chart.pointAt(chart.points[0].x, chart.points[0].y).entry, entry);
   assert.equal(chart.replay, null);
-  assert.equal(chart.setReplay({ entry, pulseAgeMs: 0 }), true);
-  assert.equal(chart.setReplay({ entry, pulseAgeMs: 10 }), false, 'same reading is not a change');
+  // A plain setter: deciding when the reading changed (and the UI that follows) belongs to app.js.
+  assert.equal(chart.setReplay({ entry, pulseAgeMs: 0 }), undefined);
+  chart.setReplay({ entry, pulseAgeMs: 10 });
+  assert.equal(chart.replay.pulseAgeMs, 10);
   calls.length = 0;
   chart.paintRing();
   assert.deepEqual(calls.filter(([name]) => name === 'arc').map(call => call[3]), [7 + (1 - 10 / 240) * 5]);
@@ -85,5 +87,6 @@ test('the chart keeps its own replay state, resets points on show and only rings
   assert.equal(calls.length, 0, 'an identical ring is not repainted');
   chart.show([], new Set());
   assert.deepEqual(chart.points, []);
-  assert.equal(chart.setReplay(null), true);
+  chart.setReplay(null);
+  assert.equal(chart.replay, null);
 });

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { validateDog, validateReading, validateBackup, makeBackup, readBackupFile, toCsv, respiratoryRate, manualDate,
-  CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId, newestFirst, NEWEST_READABLE_VERSION, READABLE_VERSIONS } from '../dist/data.mjs';
+  CONTEXTS, CONTEXT_LABELS, withReadingDefaults, defaultDogId, newestFirst, NEWEST_READABLE_VERSION, READABLE_VERSIONS,
+  TIMING_VERSION } from '../dist/data.mjs';
 import * as dataModule from '../dist/data.mjs';
 
 const dog = { id: 'dog-1', name: 'Milo', threshold: null, photo: '' };
@@ -82,6 +83,20 @@ test('import accepts formats 1 up to NEWEST_READABLE_VERSION and the error names
     assert.throws(() => validateBackup({ ...backup(), version }), { message: 'Choose a Pawbreath version 1, 2 or 3 backup (.json).' });
   }
   assert.equal(makeBackup(backup()).version, 2, 'an untimed export must not write the newest readable version');
+});
+
+// Contract: the timing gate and its error message both come from TIMING_VERSION; no version number is written
+// into a data.mjs message by hand, so a later format bump cannot leave the text naming the wrong version.
+test('the tap-timing gate message names TIMING_VERSION and data.mjs messages hard-code no version number', () => {
+  assert.equal(TIMING_VERSION, 3);
+  const timed = { ...backup(), readings: [{ ...reading, tapOffsetsMs: Array.from({ length: 12 }, (_, i) => i * 1000) }] };
+  for (const version of READABLE_VERSIONS.filter(value => value < TIMING_VERSION)) {
+    assert.throws(() => validateBackup({ ...timed, version }),
+      { message: `Recorded tap timing requires a version ${TIMING_VERSION} backup.` });
+  }
+  const source = readFileSync(new URL('../dist/data.mjs', import.meta.url), 'utf8');
+  const literals = [...source.matchAll(/(['"`])((?:\\.|(?!\1)[^\\\n])*)\1/g)].map(match => match[2]);
+  assert.deepEqual(literals.filter(text => /\bversions? \d/.test(text)), [], 'a data.mjs message hard-codes a version number');
 });
 
 // Contract: the export version is the lowest format able to represent the snapshot (2 without tap timing, 3 with

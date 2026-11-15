@@ -3,6 +3,7 @@
 // Service-worker installation requires a separately served HTTPS/localhost test.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { reachableModules } from '../scripts/lib/import-graph.mjs';
 
 const dist = new URL('../dist/', import.meta.url);
 // Every substitution must apply. A silently skipped replace would test an app that does not exist.
@@ -626,6 +627,34 @@ await check('History replays individual points and visible readings newest first
     fakeNow += 30000; await sleep(40);
     assert(!historyChart.replay && !replay.active && $('#replay-status').textContent === 'Replay finished.' && $('#replay-stop').disabled, 'Sequence failed to finish');
     assert(layout() === idleLayout, 'Finished replay moved layout: ' + idleLayout + ' -> ' + layout());
+    // A reading's status, row cue, Stop, detail and timeline are written once, on its first frame; frames for the same
+    // reading leave them alone. Sentinels written between frames must survive until the reading changes.
+    let timelines = 0; const drawTimeline = historyChart.drawTimeline;
+    historyChart.drawTimeline = () => { timelines++; drawTimeline(); };
+    try {
+      const sentinel = () => { $('#replay-status').textContent = 'sentinel'; $('#replay-stop').disabled = true;
+        $('#replay-detail').setAttribute('aria-hidden', 'true'); for (const r of document.querySelectorAll('.reading-row')) r.classList.remove('replaying'); };
+      const untouched = () => $('#replay-status').textContent === 'sentinel' && $('#replay-stop').disabled &&
+        $('#replay-detail').getAttribute('aria-hidden') === 'true' && !document.querySelector('.reading-row.replaying');
+      const shown = (id, n) => $('#replay-status').textContent.endsWith(n + ' of 3.') && !$('#replay-stop').disabled &&
+        $('#replay-detail').getAttribute('aria-hidden') === 'false' && [...document.querySelectorAll('.reading-row.replaying')].map(r=>r.dataset.readingId).join() === id;
+      $('#replay-all').click();
+      assert(timelines === 1 && shown('replay-new', 1), 'First frame did not render the reading UI once');
+      sentinel(); const progress = $('#replay-progress').textContent;
+      fakeNow += 1000; await sleep(40); fakeNow += 1000; await sleep(40);
+      assert(historyChart.replay.entry.id === 'replay-new' && $('#replay-progress').textContent !== progress, 'Same-reading frames did not arrive');
+      assert(timelines === 1 && untouched(), 'A same-reading frame rewrote the reading UI');
+      fakeNow += 28000; await sleep(40);
+      assert(historyChart.replay.entry.id === 'replay-tie' && timelines === 2 && shown('replay-tie', 2), 'Reading change did not render the reading UI once');
+      sentinel(); fakeNow += 500; await sleep(40);
+      assert(timelines === 2 && untouched(), 'A same-reading frame after a change rewrote the reading UI');
+      // Replaying the same reading again after Stop renders it afresh.
+      stopReplay(); row('replay-old').querySelector('.replay-reading').click();
+      assert(timelines === 3, 'Replay after Stop did not render its reading');
+      $('#replay-stop').click(); row('replay-old').querySelector('.replay-reading').click();
+      assert(timelines === 4 && row('replay-old').classList.contains('replaying') && !$('#replay-stop').disabled, 'Same reading replayed after Stop was not rendered');
+      $('#replay-stop').click();
+    } finally { historyChart.drawTimeline = drawTimeline; }
     $('#history-context').value = 'resting'; $('#history-context').onchange(); $('#replay-all').click();
     assert(historyChart.replay.entry.id === 'replay-old' && historyChart.replay.total === 1, 'Sequence ignored context filter');
     assert(toCsv(snapshot).includes('2026-11-14T12:00:00.000Z'), 'Replay filtering changed export scope');
@@ -905,6 +934,25 @@ const updates = replaced(replaced(readFileSync(new URL('updates.mjs', dist), 'ut
   "import { RELEASE } from './version.mjs';\n", ''), 'export ', '', true);
 const workerStub = `const harnessRegistration = Object.assign(new EventTarget(), {active:{}, waiting:null, installing:null, update:async()=>{}});
 const harnessServiceWorker = Object.assign(new EventTarget(), {controller:{}, register:async()=>harnessRegistration, getRegistration:async()=>harnessRegistration});`;
+// The harness inlines modules by hand, in dependency order, into one function scope. Drift must fail loudly: the
+// inlined set must equal the modules app.js reaches (derived with the structure tests' import parser), no import or
+// export may survive, and no top-level name may be declared twice (duplicate functions would silently override).
+const inlined = { 'version.mjs': version, 'updates.mjs': updates, 'data.mjs': data, 'tap-sound.mjs': tapSoundSource,
+  'replay.mjs': replaySource, 'history-chart.mjs': historyChartSource };
+const derived = [...reachableModules(path => readFileSync(new URL(path, dist), 'utf8'), ['./app.js'])].map(path => path.slice(2)).filter(name => name !== 'app.js');
+const listed = Object.keys(inlined);
+const missing = derived.filter(name => !listed.includes(name)), extra = listed.filter(name => !derived.includes(name));
+if (missing.length || extra.length) throw new Error(`Harness inlined modules differ from app.js's import graph: missing [${missing}], extra [${extra}]`);
+const pieces = { ...inlined, 'app.js': app, 'worker stub': workerStub, checks };
+const declaredBy = new Map();
+for (const [piece, source] of Object.entries(pieces)) {
+  if (/^\s*(?:import|export)\s/m.test(source)) throw new Error(`Harness piece ${piece} still has an import or export line`);
+  if (/^(?:const|let|var)\s+(?:[[{]|[\w$]+\s*,)/m.test(source)) throw new Error(`Harness piece ${piece} has a top-level declaration form the duplicate check cannot read`);
+  for (const [, name] of source.matchAll(/^(?:async\s+)?(?:function\*?\s*|class\s+|(?:const|let|var)\s+)([A-Za-z_$][\w$]*)/gm)) {
+    if (declaredBy.has(name)) throw new Error(`Harness scope collision: ${name} is declared by ${declaredBy.get(name)} and ${piece}`);
+    declaredBy.set(name, piece);
+  }
+}
 const script = `window.testRun = crypto.randomUUID();\n(async () => {\n${version}\n${updates}\n${workerStub}\n${data}\n${tapSoundSource}\n${replaySource}\n${historyChartSource}\n${app}\n${checks}\n})().catch(error => { document.title = 'Pawbreath harness failed'; document.body.prepend(Object.assign(document.createElement('pre'), {textContent:error.stack})); });`;
 const outputPath = process.argv[2] || '/tmp/pawbreath-browser-check.html';
 let result = replaced(html, '  <script type="module" src="./app.js"></script>', '');

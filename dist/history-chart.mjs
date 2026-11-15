@@ -93,11 +93,9 @@ export function createHistoryChart({ canvas, timeline, reducedMotion, pixelRatio
     paintRing();
   }
 
-  // Records the replay frame to draw (null when stopped). Returns whether the active reading changed.
+  // Records the replay frame to draw (null when stopped). app.js decides what a change of reading means for the page.
   function setReplay(state) {
-    const changed = replay?.entry.id !== state?.entry.id;
     replay = state;
-    return changed;
   }
 
   // Copy the cached chart and paint just the active point's ring.

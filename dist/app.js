@@ -52,6 +52,9 @@ const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const historyChart = createHistoryChart({ canvas: $('#history-chart'), timeline: $('#tap-timeline'), reducedMotion });
 // The controller is the one record of whether playback runs (replay.active); the chart only paints the frames it gets.
 const replay = createReplayController({ onFrame: renderReplay, onEnd: () => clearReplay('Replay finished.') });
+// The reading whose status, row cue, Stop button and timeline were last rendered (null while idle), so frames for
+// the same reading update only the progress text and ring.
+let renderedReplayId = null;
 
 // The detail panel keeps its layout space; inactive, it is invisible, unfocusable and hidden from assistive tech.
 function setReplayDetail(active) {
@@ -69,6 +72,7 @@ function stopReplay(message = 'Replay stopped.') {
 // Playback has ended (stopped, replaced or finished): clear the frame and restore the idle controls.
 function clearReplay(message) {
   historyChart.setReplay(null);
+  renderedReplayId = null;
   const stop = $('#replay-stop');
   // A disabled Stop button must not strand keyboard and screen-reader focus.
   const refocus = document.activeElement === stop && !document.hidden && !$('#replay-all').disabled;
@@ -90,8 +94,9 @@ function startReplay(entries) {
 }
 
 function renderReplay(state) {
-  const changed = historyChart.setReplay(state);
-  if (changed) {
+  historyChart.setReplay(state);
+  if (state.entry.id !== renderedReplayId) {
+    renderedReplayId = state.entry.id;
     $('#replay-stop').disabled = false;
     setReplayDetail(true);
     $('#replay-status').textContent = `Replaying ${dateFormat.format(new Date(state.entry.date))} · ${state.index + 1} of ${state.total}.`;
