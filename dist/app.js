@@ -4,6 +4,7 @@ import { openDatabase, readAll, saveDog, saveReading, deleteReading, restoreBack
 import { createUpdateMonitor } from './updates.mjs';
 import { createTapSound } from './tap-sound.mjs';
 import { createReplayController, replayableReadings } from './replay.mjs';
+import { createHistoryChart } from './history-chart.mjs';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -44,16 +45,11 @@ function stopTapSound() {
 let noticeAnnouncement;
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel('pawbreath-updates') : null;
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-let replayState = null;
-let chartPoints = [];
 // What History last rendered: replay and chart hit-testing use this list, not a fresh filter at click time,
 // so the controls always act on the readings the person can see and that were validated as replayable.
 let visibleReadings = [];
-let replayIds = new Set();
-// The ring last painted on the chart; frames that would repaint the identical image are skipped.
-let drawnRing = null;
-const chartBackground = document.createElement('canvas');
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const historyChart = createHistoryChart({ canvas: $('#history-chart'), timeline: $('#tap-timeline'), reducedMotion });
 const replay = createReplayController({ onFrame: renderReplay, onEnd: () => stopReplay('Replay finished.') });
 
 // The detail panel keeps its layout space; inactive, it is invisible, unfocusable and hidden from assistive tech.
@@ -65,8 +61,8 @@ function setReplayDetail(active) {
 
 function stopReplay(message = 'Replay stopped.') {
   replay.stop();
-  if (!replayState) return;
-  replayState = null;
+  if (!historyChart.replay) return;
+  historyChart.setReplay(null);
   const stop = $('#replay-stop');
   // A disabled Stop button must not strand keyboard and screen-reader focus.
   const refocus = document.activeElement === stop && !document.hidden && !$('#replay-all').disabled;
@@ -88,14 +84,13 @@ function startReplay(entries) {
 }
 
 function renderReplay(state) {
-  const changed = replayState?.entry.id !== state.entry.id;
-  replayState = state;
+  const changed = historyChart.setReplay(state);
   if (changed) {
     $('#replay-stop').disabled = false;
     setReplayDetail(true);
     $('#replay-status').textContent = `Replaying ${dateFormat.format(new Date(state.entry.date))} · ${state.index + 1} of ${state.total}.`;
     for (const row of $$('.reading-row')) row.classList.toggle('replaying', row.dataset.readingId === state.entry.id);
-    drawTapTimeline();
+    historyChart.drawTimeline();
   }
   // Frames arrive every display refresh; the text changes at most once a second or per tap.
   const progress = `${Math.floor(state.elapsedMs / 1000)} / ${state.entry.seconds} seconds · ${state.tapCount} / ${state.entry.count} recorded taps`;
@@ -103,56 +98,19 @@ function renderReplay(state) {
   drawReplayPoint();
 }
 
-// Copy the cached chart and paint just its active ring; never re-sort the journal on every frame.
+// The chart is drawn only while History is the page shown.
 function drawReplayPoint() {
-  const canvas = $('#history-chart');
-  if (page !== 'history' || canvas.hidden || !chartBackground.width) return;
-  const point = replayState && chartPoints.find(point => point.entry.id === replayState.entry.id);
-  const pulse = point && !reducedMotion.matches ? Math.max(0, 1 - replayState.pulseAgeMs / 240) : 0;
-  const ring = point ? `${point.entry.id}|${point.x}|${point.y}|${pulse}` : '';
-  if (ring === drawnRing) return;
-  drawnRing = ring;
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(chartBackground, 0, 0);
-  if (!point) return;
-  const scale = window.devicePixelRatio || 1;
-  ctx.scale(scale, scale);
-  ctx.strokeStyle = '#42745a'; ctx.lineWidth = 2; ctx.globalAlpha = 0.35;
-  ctx.beginPath(); ctx.arc(point.x, point.y, 7 + pulse * 5, 0, Math.PI * 2); ctx.stroke();
-  ctx.globalAlpha = 1;
-}
-
-function drawTapTimeline() {
-  if (!replayState) return;
-  const { entry } = replayState;
-  const canvas = $('#tap-timeline'), width = canvas.clientWidth, height = 36;
-  const scale = window.devicePixelRatio || 1;
-  canvas.width = width * scale; canvas.height = height * scale;
-  const ctx = canvas.getContext('2d'); ctx.scale(scale, scale);
-  ctx.strokeStyle = '#71806a'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(0, 24); ctx.lineTo(width, 24); ctx.stroke();
-  ctx.beginPath();
-  for (const offset of entry.tapOffsetsMs) {
-    const x = 1 + offset / (entry.seconds * 1000) * (width - 2);
-    ctx.moveTo(x, 4); ctx.lineTo(x, 24);
-  }
-  ctx.stroke();
-  canvas.setAttribute('aria-label', `${entry.count} recorded taps across ${entry.seconds} seconds. Each vertical mark is an accepted tap; gaps show time between taps.`);
+  if (page === 'history') historyChart.paintRing();
 }
 
 $('#replay-all').onclick = () => startReplay(visibleReadings);
 $('#replay-stop').onclick = () => stopReplay();
 $('#history-chart').onclick = event => {
   const rect = event.currentTarget.getBoundingClientRect();
-  const x = event.clientX - rect.left, y = event.clientY - rect.top;
-  const point = chartPoints.map(point => ({ ...point, distance: Math.hypot(point.x - x, point.y - y) }))
-    .filter(point => point.distance <= 14)
-    .sort((a, b) => a.distance - b.distance || newestFirst(a.entry, b.entry))[0];
+  const point = historyChart.pointAt(event.clientX - rect.left, event.clientY - rect.top);
   if (point) startReplay([point.entry]);
 };
-reducedMotion.addEventListener('change', () => { if (replayState) drawReplayPoint(); });
+reducedMotion.addEventListener('change', () => { if (historyChart.replay) drawReplayPoint(); });
 
 function showError(error) {
   $('#error').textContent = error.message || 'Something went wrong. Please try again.';
@@ -299,11 +257,11 @@ function filteredReadings() {
 
 function renderHistory() {
   stopReplay();
-  chartPoints = [];
   $('#history-dog').textContent = dog() ? `${dog().name}'s breathing journal.` : 'Add a dog and save your first reading.';
   const entries = filteredReadings();
   visibleReadings = entries;
-  replayIds = new Set(replayableReadings(entries).map(entry => entry.id));
+  const replayIds = new Set(replayableReadings(entries).map(entry => entry.id));
+  historyChart.show(entries, replayIds);
   $('#replay-all').disabled = replayIds.size === 0;
   $('#reading-total').textContent = `${entries.length} ${entries.length === 1 ? 'reading' : 'readings'}`;
   $('#chart-empty').hidden = entries.length > 0;
@@ -370,55 +328,9 @@ function renderHistory() {
   if (page === 'history' && entries.length) requestAnimationFrame(drawChart);
 }
 
+// Redraws (resize) reuse what History rendered; a fresh filter would apply a later Date.now() cutoff.
 function drawChart() {
-  chartPoints = [];
-  drawnRing = null;
-  const canvas = $('#history-chart');
-  // Redraws (resize) reuse what History rendered; a fresh filter would apply a later Date.now() cutoff.
-  const entries = [...visibleReadings].reverse();
-  if (!entries.length || canvas.hidden || page !== 'history') return;
-  const width = canvas.clientWidth;
-  const height = canvas.clientHeight;
-  const scale = window.devicePixelRatio || 1;
-  canvas.width = width * scale;
-  canvas.height = height * scale;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(scale, scale);
-  const left = 34, right = width - 15, top = 15, bottom = height - 32;
-  const maximum = Math.max(10, ...entries.map(item => item.rate), dog()?.threshold ?? 0);
-  const ceiling = Math.ceil(maximum / 10) * 10 + 10;
-  const start = Date.parse(entries[0].date);
-  const end = Date.parse(entries.at(-1).date);
-  const x = date => start === end ? (left + right) / 2 : left + (Date.parse(date) - start) / (end - start) * (right - left);
-  const y = rate => bottom - rate / ceiling * (bottom - top);
-  ctx.font = '11px system-ui';
-  ctx.fillStyle = '#71806a';
-  ctx.textAlign = 'right';
-  for (let i = 0; i <= 4; i++) {
-    const value = ceiling * i / 4;
-    ctx.fillText(String(Math.round(value)), left - 9, y(value) + 4);
-    ctx.strokeStyle = '#e4e9df';
-    ctx.beginPath(); ctx.moveTo(left, y(value)); ctx.lineTo(right, y(value)); ctx.stroke();
-  }
-  if (dog()?.threshold) {
-    ctx.strokeStyle = '#b98640'; ctx.setLineDash([5, 5]);
-    ctx.beginPath(); ctx.moveTo(left, y(dog().threshold)); ctx.lineTo(right, y(dog().threshold)); ctx.stroke();
-    ctx.setLineDash([]);
-  }
-  ctx.strokeStyle = '#42745a'; ctx.lineWidth = 2;
-  ctx.beginPath();
-  entries.forEach((entry, index) => index === 0 ? ctx.moveTo(x(entry.date), y(entry.rate)) : ctx.lineTo(x(entry.date), y(entry.rate)));
-  ctx.stroke();
-  for (const entry of entries) {
-    ctx.fillStyle = '#42745a'; ctx.beginPath(); ctx.arc(x(entry.date), y(entry.rate), 4, 0, Math.PI * 2); ctx.fill();
-    if (replayIds.has(entry.id)) chartPoints.push({ entry, x: x(entry.date), y: y(entry.rate) });
-  }
-  const label = timestamp => new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(timestamp));
-  ctx.fillStyle = '#71806a'; ctx.textAlign = 'left'; ctx.fillText(label(start), left, height - 8);
-  if (start !== end) { ctx.textAlign = 'right'; ctx.fillText(label(end), right, height - 8); }
-  chartBackground.width = canvas.width; chartBackground.height = canvas.height;
-  chartBackground.getContext('2d').drawImage(canvas, 0, 0);
-  drawReplayPoint();
+  historyChart.draw({ visible: page === 'history', threshold: dog()?.threshold });
 }
 
 function setLocked(locked) {
@@ -750,7 +662,7 @@ function revealSavedReading(entry) {
   if (historyContext !== 'all' && historyContext !== entry.context) setHistoryContext('all');
 }
 $('#history-context').onchange = () => { setHistoryContext($('#history-context').value); renderHistory(); };
-window.addEventListener('resize', () => { if (page === 'history') { drawChart(); drawTapTimeline(); } });
+window.addEventListener('resize', () => { if (page === 'history') { drawChart(); historyChart.drawTimeline(); } });
 
 function previewPhoto() {
   $('#photo-preview').hidden = !photo;

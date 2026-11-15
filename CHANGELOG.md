@@ -8,7 +8,7 @@ User-visible changes are recorded here. Unreleased changes have not been deploye
 
 - History can replay each new timed reading at its recorded tap rhythm, or play visible readings newest first, one at a time. Playback is silent and works offline, with a static timeline, Stop control and reduced-motion support. Old and manual readings remain untimed.
 
-- New timed readings retain individual accepted tap times in milliseconds. Backup format 3 preserves them and imports older formats without inventing timing. Older app versions reject format 3 backups, so do not roll back after recording timed readings. App version is now 1.2.0 (unreleased).
+- New timed readings retain individual accepted tap times in milliseconds. Backups stay format 2 until a reading has tap timing, so older app versions (1.1.0) can still restore them. A backup containing timing is format 3, which preserves it; older app versions reject format 3 backups, so do not roll back after recording timed readings. Restore imports formats 1, 2 and 3 without inventing timing. App version is now 1.2.0 (unreleased).
 
 - Dedicated counting view with a large stationary target, separate Undo/Cancel controls and optional quiet tap sounds. Background navigation is unavailable during a count; Escape cancels it. Single-finger movement on the target no longer scrolls the page, while pinch zoom remains available.
 

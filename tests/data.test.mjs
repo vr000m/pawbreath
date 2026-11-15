@@ -6,7 +6,7 @@ import { validateDog, validateReading, validateBackup, makeBackup, readBackupFil
 
 const dog = { id: 'dog-1', name: 'Milo', threshold: null, photo: '' };
 const reading = { id: 'reading-1', dogId: dog.id, date: '2026-11-12T21:00:00.000Z', count: 12, seconds: 30, rate: 24, notes: '', source: 'timed', context: 'not-recorded', uncertain: false };
-const backup = () => ({ format: 'pawbreath', version: 3, dogs: [{ ...dog }], readings: [{ ...reading }] });
+const backup = () => ({ format: 'pawbreath', version: 2, dogs: [{ ...dog }], readings: [{ ...reading }] });
 
 // Contract: newestFirst is the one reading order, used by both the History list and the replay queue.
 test('newestFirst orders by date descending, then id by code unit, never by locale, across the whole space', () => {
@@ -50,10 +50,11 @@ test('tap traces are dense, ordered, timed-only and copied without fabricating l
     [1, 30000, 59999]);
 });
 
-test('format 3 preserves traces; versions 1 and 2 stay untimed and cannot smuggle timing', () => {
+test('format 3 preserves traces; versions 1 and 2 stay untimed, export as format 2 and cannot smuggle timing', () => {
   const traced = { ...reading, count: 3, rate: 6, tapOffsetsMs: [3, 1301, 29000] };
-  const input = { ...backup(), readings: [traced] };
+  const input = { ...backup(), version: 3, readings: [traced] };
   const exported = makeBackup(input);
+  assert.equal(exported.version, 3);
   assert.deepEqual(validateBackup(JSON.parse(JSON.stringify(exported))), input);
   traced.tapOffsetsMs[0] = 4;
   assert.equal(exported.readings[0].tapOffsetsMs[0], 3);
@@ -61,10 +62,60 @@ test('format 3 preserves traces; versions 1 and 2 stay untimed and cannot smuggl
   assert.equal(toCsv(input), toCsv({ ...input, readings: [untimed] }));
   for (const version of [1, 2]) {
     const legacy = { ...backup(), version };
-    assert.equal(validateBackup(legacy).version, 3);
+    assert.equal(validateBackup(legacy).version, 2);
     assert.ok(!Object.hasOwn(validateBackup(legacy).readings[0], 'tapOffsetsMs'));
-    assert.equal(makeBackup(legacy).version, 3);
+    assert.equal(makeBackup(legacy).version, 2);
     assert.throws(() => validateBackup({ ...input, version }), /version 3/);
+  }
+});
+
+// Contract: the export version is the lowest format able to represent the snapshot (2 without tap timing, 3 with
+// it); makeBackup and validateBackup are a round-trip pair; an app on 1.1.0 (formats 1 and 2 only) can restore every
+// format 2 export. State space: {no timed readings, mixed, all timed, empty journal} x {v1, v2, v3 import}.
+const OLD_READING_FIELDS = ['id', 'dogId', 'date', 'count', 'seconds', 'rate', 'notes', 'source', 'context', 'uncertain'];
+// The 1.1.0 validateBackup gate and reading whitelist (main:dist/data.mjs): versions 1 and 2, fields above only.
+function oldAppAccepts(file) {
+  return file.format === 'pawbreath' && [1, 2].includes(file.version) &&
+    Object.keys(file).every(key => ['format', 'version', 'dogs', 'readings', 'exportedAt'].includes(key)) &&
+    file.readings.every(item => Object.keys(item).every(key => OLD_READING_FIELDS.includes(key)));
+}
+test('exports use format 2 until a reading carries tap timing; old apps restore every format 2 export', () => {
+  const timed = (id, offsets) => ({ ...reading, id, count: offsets.length, rate: respiratoryRate(offsets.length, 30), tapOffsetsMs: offsets });
+  const untimed = id => ({ ...reading, id });
+  const manual = id => ({ ...reading, id, source: 'manual', count: null, seconds: null, rate: 23.5 });
+  const journals = {
+    'no timed readings': [untimed('u-1'), manual('m-1')],
+    mixed: [untimed('u-1'), timed('t-1', [5, 900, 29999]), manual('m-1')],
+    'all timed': [timed('t-1', [0, 0, 12]), timed('t-2', [100, 200])],
+    'empty journal': [],
+  };
+  for (const [name, readings] of Object.entries(journals)) {
+    const hasTiming = readings.some(item => 'tapOffsetsMs' in item);
+    for (const importVersion of [1, 2, 3]) {
+      const label = `${name}, v${importVersion} import`;
+      const file = { format: 'pawbreath', version: importVersion, dogs: [{ ...dog }], readings: structuredClone(readings) };
+      if (hasTiming && importVersion < 3) {
+        // The timing version gate stays: a v1/v2 file carrying tapOffsetsMs is rejected.
+        assert.throws(() => validateBackup(file), /version 3/, label);
+        continue;
+      }
+      const imported = validateBackup(file);
+      assert.deepEqual(imported.readings, readings, label);
+      const exported = makeBackup(imported);
+      assert.equal(exported.version, hasTiming ? 3 : 2, label);
+      assert.equal(imported.version, exported.version, `${label}: validateBackup reports the export version`);
+      const { exportedAt, ...body } = JSON.parse(JSON.stringify(exported));
+      assert.ok(exportedAt, label);
+      // Round-trip pair: validating an export reproduces it exactly, traces included.
+      assert.deepEqual(validateBackup(body), body, label);
+      assert.deepEqual(body.readings, readings, label);
+      if (hasTiming) {
+        assert.ok(!oldAppAccepts(exported), `${label}: a timed export must not look readable by 1.1.0`);
+      } else {
+        assert.ok(exported.readings.every(item => !Object.hasOwn(item, 'tapOffsetsMs')), label);
+        assert.ok(oldAppAccepts(exported), `${label}: 1.1.0 cannot restore this export`);
+      }
+    }
   }
 });
 
@@ -186,7 +237,7 @@ test('version 1 backups migrate without guessing measurement context', () => {
   const legacy = { ...reading };
   delete legacy.source; delete legacy.context; delete legacy.uncertain;
   const migrated = validateBackup({ format: 'pawbreath', version: 1, dogs: [dog], readings: [legacy] });
-  assert.equal(migrated.version, 3);
+  assert.equal(migrated.version, 2);
   assert.deepEqual(migrated.readings[0], reading);
 });
 

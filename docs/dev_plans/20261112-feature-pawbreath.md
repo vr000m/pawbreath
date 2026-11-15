@@ -14,6 +14,7 @@ A static HTML/CSS/JavaScript app with device-local IndexedDB storage. No third-p
 | Files | Responsibility |
 | --- | --- |
 | `dist/index.html`, `app.css`, `app.js` | Profiles/photos, counter, manual-entry forms, guidance, History and Settings |
+| `dist/replay.mjs`, `history-chart.mjs`, `tap-sound.mjs` | Replay timing controller; History chart drawing, point hit-testing and replay ring/timeline; quiet tap sound |
 | `dist/data.mjs` | Validation, transactional storage, CSV and JSON backup/restore, `CONTEXT_LABELS`, `withReadingDefaults`, `defaultDogId` and `manualDialogAction` |
 | `dist/updates.mjs`, `sw.js` | Update status and scoped offline shell; no journal writes |
 | `scripts/release.mjs`, `scripts/lib/precache-assets.mjs`, `dist/version.mjs`, `dist/release.json` | Deterministic app release/build identity; published metadata is network-only |
@@ -80,4 +81,8 @@ Vet reports, reading corrections/profile archiving, household reminders and exte
 
 ### 2026-11-14 timing compatibility correction
 
-The [recorded tap replay plan](20261114-feature-breath-timing-replay.md) supersedes the format-2 recovery decision: new exports use format 3 and preserve optional millisecond offsets; formats 1/2 import without timing. IndexedDB remains schema 1. Old apps can strip timing during export, so rollback after new recordings is unsupported.
+The [recorded tap replay plan](20261114-feature-breath-timing-replay.md) supersedes the format-2 recovery decision: exports containing timing use format 3 and preserve optional millisecond offsets; formats 1/2 import without timing. IndexedDB remains schema 1. Old apps can strip timing during export, so rollback after new recordings is unsupported.
+
+### 2026-11-14 owner decision: lowest export format
+
+Superseding "new exports use format 3" above: a backup is format 2 when no reading carries tap timing, so installs on 1.1.0 can still restore it, and format 3 only when at least one reading does. Import accepts formats 1, 2 and 3; v1/v2 files carrying timing are rejected. See the [replay plan](20261114-feature-breath-timing-replay.md), round 3 part 2.

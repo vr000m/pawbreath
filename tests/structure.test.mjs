@@ -12,7 +12,7 @@ const staticImports = source => [...source.matchAll(/^import\s+(?:\{([^}]*)\}\s+
   .map(([, names = '', path]) => ({ path, names: names.split(',').map(name => name.trim().split(/\s+as\s+/)[0]).filter(Boolean) }));
 
 test('every name a module imports is exported by the imported module', async () => {
-  for (const name of ['app.js', 'data.mjs', 'updates.mjs', 'replay.mjs']) {
+  for (const name of ['app.js', 'data.mjs', 'updates.mjs', 'replay.mjs', 'history-chart.mjs']) {
     for (const { path, names } of staticImports(read(name))) {
       const module = await import(new URL(path, dist));
       for (const imported of names) assert.ok(imported in module, `${name} imports ${imported} from ${path}, which does not export it`);
@@ -23,8 +23,8 @@ test('every name a module imports is exported by the imported module', async () 
 // The History list and the replay queue share one reading order, owned by data.mjs with the other reading rules.
 // This only checks the import. Use is checked by tests/replay.test.mjs (replay queue in newestFirst order) and by the
 // browser harness (History list order equals replay order).
-test('app.js and replay.mjs take the reading order from data.mjs', () => {
-  for (const name of ['app.js', 'replay.mjs']) {
+test('app.js, replay.mjs and history-chart.mjs take the reading order from data.mjs', () => {
+  for (const name of ['app.js', 'replay.mjs', 'history-chart.mjs']) {
     assert.ok(staticImports(read(name)).some(({ path, names }) => path === './data.mjs' && names.includes('newestFirst')),
       `${name} must import newestFirst from data.mjs`);
   }
@@ -44,7 +44,7 @@ test('the precache list contains every module, stylesheet, manifest and icon the
       if (!needed.has(path)) { needed.add(path); queue.push(path); }
     }
   }
-  for (const module of ['./app.js', './data.mjs', './updates.mjs', './replay.mjs', './version.mjs', './app.css', './manifest.webmanifest']) {
+  for (const module of ['./app.js', './data.mjs', './updates.mjs', './replay.mjs', './history-chart.mjs', './version.mjs', './app.css', './manifest.webmanifest']) {
     assert.ok(needed.has(module), `${module} was not discovered`);
   }
   for (const path of needed) assert.ok(assets.includes(path), `${path} is loaded by the shell but not precached`);

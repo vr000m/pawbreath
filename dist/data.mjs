@@ -1,7 +1,10 @@
 export const FORMAT = 'pawbreath';
+// The newest backup format this app reads. Exports use the lowest format able to represent the snapshot.
 export const VERSION = 3;
 // The first backup format that may carry recorded tap timing. Later formats keep accepting it.
 const TIMING_VERSION = 3;
+// Readings without tap timing fit format 2, which apps on 1.1.0 can still restore.
+const UNTIMED_VERSION = 2;
 // The single definition of measurement contexts. `label` is the form option, `filter` the History
 // filter option and `short` the History/latest-reading description. Order is the form order.
 export const CONTEXT_LABELS = Object.freeze({
@@ -150,9 +153,12 @@ export function validateBackup(input) {
   requireValue(new Set(readings.map(reading => reading.id)).size === readings.length,
     'This backup contains duplicate reading IDs.');
   requireValue(readings.every(reading => dogIds.has(reading.dogId)), 'A reading is missing its dog profile.');
-  return { format: FORMAT, version: VERSION, dogs, readings };
+  // The lowest format that holds these readings, so makeBackup writes it and validating an export reproduces it.
+  const version = readings.some(reading => 'tapOffsetsMs' in reading) ? TIMING_VERSION : UNTIMED_VERSION;
+  return { format: FORMAT, version, dogs, readings };
 }
 
+// Validates as the newest readable format, then writes the version validateBackup chose (2 or 3).
 export function makeBackup(snapshot) {
   return { ...validateBackup({ ...snapshot, format: FORMAT, version: VERSION }), exportedAt: new Date().toISOString() };
 }
