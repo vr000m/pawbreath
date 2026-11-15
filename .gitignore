@@ -32,3 +32,4 @@ test-results/
 pawbreath-browser-check.html
 
 # dist/ is the app source and remains tracked.
+/.review-plan
