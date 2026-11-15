@@ -33,8 +33,17 @@ const counterCard = document.querySelector('.counter-card');
 const counterHome = document.createComment('Counter home');
 counterCard.before(counterHome);
 const countingDialog = document.querySelector('#counting-dialog');
+// Idle line after the tick's availability check: audio was running when the box was ticked.
 const soundOnStatus = 'Tap sound on. Device volume or mute may prevent sound.';
 const soundUnavailableStatus = 'Tap sound is not available on this device.';
+// Start shows this from the checkbox alone, before audio is confirmed running, so it claims only the intent.
+const soundCountStatus = 'Tap sound is on for this count.';
+const countHint = 'Keep this screen open while counting.';
+// During a count the sound status (if any) comes first and the hint always stays.
+const countStatus = sound => sound ? `${sound} ${countHint}` : countHint;
+// Taps meant for the big target can land on the result card just after a count ends; it ignores input this long.
+const resultGuardMs = 600;
+let resultGuardTimer = null;
 let soundCheck = 0;
 // The only way the app silences tap audio. Suspending makes a pending detect() resolve false, so every stop
 // also invalidates that check: its result would describe this suspend, not whether the device can play sound.
@@ -351,6 +360,25 @@ function setLocked(locked) {
   $('#tap-sound').disabled = locked;
 }
 
+// The result card is inert until the timer fires. Every exit that removes the card (save, discard, reset, a new count)
+// clears it, so inert cannot stay stuck. #counter-status, which announces the result, lives outside the card.
+function clearResultGuard() {
+  clearTimeout(resultGuardTimer);
+  resultGuardTimer = null;
+  $('#result').inert = false;
+}
+
+function guardResult() {
+  clearResultGuard();
+  $('#result').inert = true;
+  resultGuardTimer = setTimeout(() => {
+    resultGuardTimer = null;
+    $('#result').inert = false;
+    // Focus could not move into the inert card; move it to Save now, unless the person already went elsewhere.
+    if (pending && (!document.activeElement || document.activeElement === document.body)) $('#save-reading').focus();
+  }, resultGuardMs);
+}
+
 function leaveCountingView() {
   const moved = counterCard.parentElement === countingDialog;
   if (countingDialog.open) countingDialog.close();
@@ -388,6 +416,7 @@ function resetCounter(message = '') {
   $('#start').disabled = !dog() || !db;
   $('#undo').hidden = true;
   $('#cancel').hidden = true;
+  clearResultGuard();
   $('#result').hidden = true;
   $('#reading-notes').value = '';
   $('#reading-context').value = 'not-recorded';
@@ -439,7 +468,7 @@ function completeCount() {
   $('#counter-status').textContent = 'Reading ready to save.';
   $('#counter-label').textContent = count === 1 ? 'breath counted' : 'breaths counted';
   $('#counter-instruction').textContent = `${count} breaths counted in ${finished.seconds} seconds.`;
-  $('#save-reading').focus();
+  guardResult();
 }
 
 function tick() {
@@ -453,6 +482,7 @@ function tick() {
 $('#start').onclick = async () => {
   if (!dog() || session || pending) return;
   stopReplay();
+  clearResultGuard();
   $('#error').hidden = true;
   session = { dogId: selectedId, date: new Date().toISOString(), started: performance.now(), seconds: duration, tapOffsetsMs: [] };
   setLocked(true);
@@ -464,7 +494,7 @@ $('#start').onclick = async () => {
   $('#breath-button').classList.add('active');
   $('#counter-number').textContent = '0';
   $('#counter-instruction').textContent = 'Watch your dog. Tap the large area once per breath.';
-  $('#counter-status').textContent = $('#tap-sound').checked ? soundOnStatus : 'Keep this screen open while counting.';
+  $('#counter-status').textContent = countStatus($('#tap-sound').checked ? soundCountStatus : '');
   countingDialog.append(counterCard);
   try { countingDialog.showModal(); }
   catch { cancelCount('Could not open counting. Please try again.'); return; }
@@ -509,7 +539,8 @@ $('#tap-sound').onchange = async () => {
   const available = await tapSound.detect();
   if (attempt !== soundCheck || !box.checked) return;
   if (!available) { box.checked = false; tapSound.prepare(false); }
-  if (!pending) status.textContent = available ? soundOnStatus : soundUnavailableStatus;
+  // A check that settles mid-count keeps the hint beside the sound status.
+  if (!pending) status.textContent = session ? countStatus(available ? soundCountStatus : soundUnavailableStatus) : available ? soundOnStatus : soundUnavailableStatus;
 };
 $('#breath-button').onkeydown = event => { if (event.repeat) event.preventDefault(); };
 $('#undo').onclick = () => {

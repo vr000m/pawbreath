@@ -24,6 +24,8 @@ Deployed build `aa881e199dc7`.
 - Tap sound recovers on the next taps after a call or other interruption during a count.
 - Tap sound stops cleanly when a count ends or Quiet tap sound is unticked: a tone cut off by the end of a count no longer resumes at the start of the next one, and unticking releases the audio.
 - An update notice that arrives during a count is announced to screen readers once the count ends.
+- A late tap at the end of a count can no longer press Save reading or Discard: the result card ignores input for about 0.6 seconds.
+- The “Keep this screen open while counting.” hint stays visible with the tap sound status. The status at Start now reads “Tap sound is on for this count.” because audio is not yet confirmed running.
 - The finished count reads “breaths counted” again, and the counting instruction says “Tap the large area” instead of naming a colour.
 
 ## Deployed build 63316a30696f — 14 November 2026

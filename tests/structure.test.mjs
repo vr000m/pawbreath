@@ -49,6 +49,19 @@ test('app.js decides replay activity from the controller, not from the chart mod
   assert.ok(/replay\.active\b/.test(app), 'app.js must ask the replay controller whether playback is active');
 });
 
+// The result card ignores input just after a count ends. The browser harness proves the behaviour; this keeps the
+// delay a single named constant, the only place that sets `inert` on #result, and cleared by every exit that removes the card.
+test('app.js guards the result card with one named delay and clears it on reset and Start', () => {
+  const app = read('app.js');
+  const delay = app.match(/^const resultGuardMs = (\d+);$/m);
+  assert.ok(delay && Number(delay[1]) >= 400 && Number(delay[1]) <= 1000, 'resultGuardMs must be one named constant of about 600 ms');
+  assert.equal(app.match(/, resultGuardMs\)/g)?.length, 1, 'the guard timer must use resultGuardMs once');
+  assert.equal(app.match(/\$\('#result'\)\.inert = true/g)?.length, 1, 'only guardResult makes #result inert');
+  const body = name => app.slice(app.indexOf(`function ${name}(`)).split(/\n}\n/)[0];
+  for (const name of ['resetCounter', 'completeCount']) assert.ok(/\b(clearResultGuard|guardResult)\(\)/.test(body(name)), `${name} must arm or clear the result guard`);
+  assert.ok(app.slice(app.indexOf("$('#start').onclick")).split(/\n};\n/)[0].includes('clearResultGuard()'), 'Start must clear the result guard');
+});
+
 // The chart only records and paints frames. app.js decides when the replaying reading changed (status, row, Stop,
 // timeline) from the frame itself; the browser harness checks those updates fire once per reading.
 test('app.js calls historyChart.setReplay only as a statement and never uses its result', () => {

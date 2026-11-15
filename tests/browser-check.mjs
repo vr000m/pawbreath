@@ -92,7 +92,9 @@ await check('The breath action keeps its visible name and exposes the count thro
   $('#cancel').click(); verify('Ready');
   $('#start').click(); $('#breath-button').click();
   fakeNow = 30000; tick(); verify('1', 'breath counted');
-  assert(!countingDialog.open && document.activeElement === $('#save-reading'), 'Completion did not restore result focus');
+  assert(!countingDialog.open && $('#result').inert && !$('#result').hidden, 'Completion did not show the guarded result');
+  await sleep(resultGuardMs + 100);
+  assert(!$('#result').inert && document.activeElement === $('#save-reading'), 'Result focus not restored once the late-tap guard ends');
   const discard = $('#discard').onclick(); $('#confirm-yes').click(); await discard;
   verify('Ready');
   fakeNow = 0; $('#start').click(); for (let i = 0; i < 13; i++) $('#breath-button').click();
@@ -130,6 +132,45 @@ await check('Counting dialog restores the card on every exit and isolates later 
   $('#start').click(); fakeNow += 30000; tick(); restored();
   assert(!pending, 'Zero count produced a result');
   fakeNow = 0;
+});
+// Contract: the screen-open hint stays with the sound status (sound first), including when a tick's check settles during
+// a count; the status after Start comes from the checkbox alone, so it says "on for this count", never "on" (round 9).
+await check('Start keeps the screen-open hint beside the sound status', async () => {
+  const original = {...tapSound};
+  const box = $('#tap-sound');
+  let available = true;
+  const queued = [];
+  class Audio {
+    constructor() { this.state = 'suspended'; this.currentTime = 0; }
+    resume() { return new Promise((resolve, reject) => queued.push(() => { if (!available) { reject(new Error('No audio')); return; } this.state = 'running'; resolve(); })); }
+    suspend() { this.state = 'suspended'; return Promise.resolve(); }
+    createOscillator() { return {frequency:{},connect(){},disconnect(){},start(){},stop(){}}; }
+    createGain() { return {gain:{setValueAtTime(){},linearRampToValueAtTime(){}},connect(){},disconnect(){}}; }
+  }
+  const settle = async () => { while (queued.length) queued.shift()(); await sleep(0); await sleep(0); };
+  const status = () => $('#counter-status').textContent;
+  try {
+    assert(countHint === 'Keep this screen open while counting.' && soundCountStatus === 'Tap sound is on for this count.', 'Status constants changed');
+    Object.assign(tapSound, createTapSound(Audio));
+    box.checked = false; fakeNow = 0; $('#start').click();
+    assert(status() === countHint, 'Unticked count status: ' + status());
+    $('#cancel').click();
+    box.checked = true; $('#start').click();
+    assert(status() === soundCountStatus + ' ' + countHint && status() === 'Tap sound is on for this count. Keep this screen open while counting.', 'Ticked count status: ' + status());
+    $('#cancel').click();
+    // The tick's check settles after Start: available keeps the hint; unavailable says so, still with the hint.
+    for (const audio of [true, false]) {
+      available = audio; queued.length = 0;
+      Object.assign(tapSound, createTapSound(Audio));
+      box.checked = true; box.dispatchEvent(new Event('change'));
+      $('#start').click();
+      await settle();
+      const expected = (audio ? soundCountStatus : soundUnavailableStatus) + ' ' + countHint;
+      assert(session && status() === expected, 'Mid-count status (audio ' + audio + '): ' + status());
+      assert(box.checked === audio, 'Mid-count unavailable audio left the box ticked');
+      $('#cancel').click();
+    }
+  } finally { if (session) $('#cancel').click(); Object.assign(tapSound, original); box.checked = false; fakeNow = 0; }
 });
 await check('Delayed audio never blocks counting or replays tones into a later session', async () => {
   const original = {...tapSound};
@@ -175,14 +216,14 @@ await check('Ticking tap sound reports real audio availability and never blocks 
     assert($('#counter-status').textContent === 'Tap sound is not available on this device.', 'Missing audio status: ' + $('#counter-status').textContent);
     assert(!box.checked, 'Unavailable sound left the box ticked');
     $('#start').click(); $('#breath-button').click();
-    assert(session && session.tapOffsetsMs.length === 1 && $('#counter-status').textContent === 'Keep this screen open while counting.', 'Unavailable sound affected counting');
+    assert(session && session.tapOffsetsMs.length === 1 && $('#counter-status').textContent === countHint, 'Unavailable sound affected counting');
     $('#cancel').click();
     Object.assign(tapSound, createTapSound(class { constructor() { throw new Error('No audio'); } }));
     await tickBox();
     assert(!box.checked && $('#counter-status').textContent === 'Tap sound is not available on this device.', 'Throwing audio reported as on');
     Object.assign(tapSound, createTapSound(Running));
     await tickBox();
-    assert(box.checked && $('#counter-status').textContent === 'Tap sound on. Device volume or mute may prevent sound.', 'Available audio status: ' + $('#counter-status').textContent);
+    assert(box.checked && $('#counter-status').textContent === soundOnStatus && soundOnStatus === 'Tap sound on. Device volume or mute may prevent sound.', 'Available audio status: ' + $('#counter-status').textContent);
     box.checked = false; box.dispatchEvent(new Event('change'));
     assert($('#counter-status').textContent === 'Start the timer, then tap for each breath.', 'Unticking left a sound status');
   } finally { Object.assign(tapSound, original); box.checked = false; }
@@ -222,7 +263,7 @@ await check('Unticking tap sound suspends audio in every idle state without affe
       setBox(false); await settle();
       assert(suspends > before, cell + ': unticking did not request suspend');
       assert(context.state !== 'running', cell + ': audio still running after untick (' + context.state + ')');
-      assert(!box.checked && $('#counter-status').textContent !== 'Tap sound on. Device volume or mute may prevent sound.', cell + ': stale detect re-ticked the box or status');
+      assert(!box.checked && $('#counter-status').textContent !== soundOnStatus, cell + ': stale detect re-ticked the box or status');
       const made = tones;
       $('#start').click(); $('#breath-button').click();
       assert(session && session.tapOffsetsMs.length === 1 && tones === made, cell + ': unticked count sounded or failed to count');
@@ -243,7 +284,7 @@ await check('Unticking tap sound suspends audio in every idle state without affe
 await check('A tap-sound check still pending when a count ends keeps the box and count message consistent', async () => {
   const original = {...tapSound};
   const box = $('#tap-sound');
-  const on = 'Tap sound on. Device volume or mute may prevent sound.', off = 'Tap sound is not available on this device.';
+  const on = soundOnStatus, off = soundUnavailableStatus;
   const cancelled = 'Count cancelled. Start again when your dog is settled.';
   let context, suspends = 0, tones = 0, available = true;
   const queued = [];
@@ -926,6 +967,65 @@ await check('Counting targets stay separate and reachable across phone sizes, sa
 await refresh();
 $('#error').hidden = true;
 showPage('measure');
+// Contract (owner-approved, 14 November 2026): a finished count's result card ignores pointer and keyboard input for
+// resultGuardMs, so taps still meant for the big target cannot land on Save, Discard or the notes field. It is inert,
+// so a real finger is hit-tested past it; elementFromPoint plus click() reproduces that. The guard ends by its own
+// timer, and every other exit (discard, save, reset, a new count) clears it, so inert never stays stuck.
+await check('A finished count ignores late taps on the result card, then Save works (last: it saves a reading)', async () => {
+  const result = $('#result');
+  const tapAt = target => {
+    target.scrollIntoView({block:'center'});
+    const box = target.getBoundingClientRect();
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    hit?.click();
+    return hit;
+  };
+  const finish = (taps = 1) => { fakeNow = 0; $('#start').click(); for (let i = 0; i < taps; i++) $('#breath-button').click(); fakeNow = session.seconds * 1000; tick(); };
+  const stored = async () => (await readAll(db)).readings.length;
+  const before = await stored();
+  try {
+    finish();
+    assert(pending && !result.hidden && result.inert && resultGuardTimer !== null, 'Result card is not guarded after a count ends: ' + JSON.stringify({pending: !!pending, session: !!session, hidden: result.hidden, inert: result.inert, timer: resultGuardTimer, status: $('#counter-status').textContent}));
+    assert($('#counter-status').textContent === 'Reading ready to save.' && !result.contains($('#counter-status')) && !$('#counter-status').closest('[inert]'), 'Result announcement is inside the guarded card');
+    for (const control of ['#save-reading', '#discard']) {
+      const hit = tapAt($(control));
+      assert(!hit || !result.contains(hit), control + ' received a pointer tap during the guard');
+    }
+    await sleep(0);
+    assert($('#confirm-dialog').open === false && pending && await stored() === before, 'A late tap saved or discarded the reading');
+    $('#reading-notes').focus(); $('#reading-context').focus();
+    assert(!result.contains(document.activeElement), 'Keyboard focus reached the guarded result card');
+    await sleep(resultGuardMs + 100);
+    assert(!result.inert && resultGuardTimer === null && document.activeElement === $('#save-reading'), 'Guard did not end by itself with focus on Save');
+    assert(tapAt($('#save-reading')) === $('#save-reading'), 'Save is not reachable after the guard');
+    for (let i = 0; i < 100 && pending; i++) await sleep(10);
+    assert(!pending && await stored() === before + 1 && !result.inert, 'Save after the guard did not store the reading');
+    // Discard (and every resetCounter) clears the guard and its timer at once.
+    finish();
+    assert(result.inert && resultGuardTimer !== null, 'Second result not guarded');
+    const discard = $('#discard').onclick(); $('#confirm-yes').click(); await discard;
+    assert(!pending && result.hidden && !result.inert && resultGuardTimer === null, 'Discard left the guard armed');
+    // A cancelled or zero-tap count has no result card and arms nothing.
+    finish(0);
+    assert(!pending && result.hidden && !result.inert && resultGuardTimer === null, 'Zero-tap finish armed the guard');
+    $('#start').click(); $('#breath-button').click(); $('#cancel').click();
+    assert(!result.inert && resultGuardTimer === null, 'Cancelled count armed the guard');
+    // Defensive: Start clears the guard even when no reset ran first.
+    finish();
+    assert(result.inert, 'Third result not guarded');
+    pending = null; $('#start').click();
+    assert(session && !result.inert && resultGuardTimer === null, 'A new count left the guard armed');
+    $('#cancel').click();
+    // A stale timer must not act after the card went away.
+    finish(); const stale = $('#discard').onclick(); $('#confirm-yes').click(); await stale;
+    await sleep(resultGuardMs + 100);
+    assert(!result.inert && document.activeElement !== $('#save-reading'), 'Stale guard timer acted after discard');
+  } finally {
+    if (session) $('#cancel').click();
+    if (pending) { pending = null; resetCounter(); }
+    fakeNow = 0;
+  }
+});
 output.textContent = 'BROWSER CHECK COMPLETE\\n' + results.join('\\n');
 document.title = results.some(line=>line.startsWith('FAIL')) ? 'Pawbreath checks FAILED' : 'Pawbreath checks PASSED';
 `;
