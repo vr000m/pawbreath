@@ -4,7 +4,9 @@ A mobile-first breathing journal for dogs: timed 30/60-second counts, multiple p
 
 ![Pawbreath measurement screen with a sample Milo profile and latest reading](docs/images/pawbreath-preview.png)
 
-Local preview with sample data. **Production: 1.2.0 build `aa881e199dc7`, deployed 14 November 2026.** See the [changelog](CHANGELOG.md), [development plan](docs/dev_plans/20261112-feature-pawbreath.md), [focused counting checks](docs/dev_plans/20261114-feature-focused-counting.md) and [tap replay verification](docs/dev_plans/20261114-feature-breath-timing-replay.md). Physical Safari and installed-app checks on iPhone 12 and iPhone 17 Pro Max remain pending.
+Local preview with sample data. **Production: 1.2.0 build `49910c45716f`, verified 15 November 2026.** See the [changelog](CHANGELOG.md), [development plan](docs/dev_plans/20261112-feature-pawbreath.md), [focused counting checks](docs/dev_plans/20261114-feature-focused-counting.md) and [tap replay verification](docs/dev_plans/20261114-feature-breath-timing-replay.md). Physical Safari and installed-app checks on iPhone 12 and iPhone 17 Pro Max remain pending.
+
+The new `/about` introduction (not yet deployed) explains counting, heart-failure monitoring, phone installation and local storage. Settings and the footer on every journal page link to it in a new tab. About shares the footer's tagline, divider and styling, with a return link to the journal. Its compact header stays visible while scrolling; the journal header does so above phone widths, with fixed bottom tabs on phones. Its History screenshot uses fictional Milo readings. The introduction needs a connection; the journal and its existing breathing guidance remain available offline after setup. The app stays at `/` with the same installed identity and journal storage. See the [introduction plan and checks](docs/dev_plans/20261115-feature-about-landing-page.md).
 
 ## Install and use
 
@@ -42,7 +44,7 @@ The tracked `dist/` directory is the app source; no runtime build or package ins
 python3 -m http.server 8766 --bind 127.0.0.1 --directory dist
 ```
 
-Open <http://127.0.0.1:8766>. Use localhost HTTP or hosted HTTPS for service workers.
+Open <http://127.0.0.1:8766>. Use localhost HTTP or hosted HTTPS for service workers. Python exposes the introduction at `/about.html`; use `just dev` to check Cloudflare's `/about` URL and redirects.
 
 With Node.js 22.12+ and [just](https://github.com/casey/just):
 
