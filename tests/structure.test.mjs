@@ -21,7 +21,8 @@ test('every name a module imports is exported by the imported module', async () 
 });
 
 // The History list and the replay queue share one reading order, owned by data.mjs with the other reading rules.
-// Behaviour (list order equals replay order) is checked by the browser harness.
+// This only checks the import. Use is checked by tests/replay.test.mjs (replay queue in newestFirst order) and by the
+// browser harness (History list order equals replay order).
 test('app.js and replay.mjs take the reading order from data.mjs', () => {
   for (const name of ['app.js', 'replay.mjs']) {
     assert.ok(staticImports(read(name)).some(({ path, names }) => path === './data.mjs' && names.includes('newestFirst')),
@@ -202,6 +203,8 @@ test('form controls are at least 16px so iOS Safari does not zoom the page on fo
 });
 
 // Why a block after the phone block could override one of its values by source order, as messages ([] when none).
+// Source order only: a higher-specificity rule anywhere (the #counting-dialog block above the phone block) still
+// overrides phone values, and this guard does not see it. Those overrides are deliberate; see the note in app.css.
 // A block after it may only be: a media block capped at 600px or less (the height-gated short-phone blocks), the
 // wide-screen complement `not all and (max-width:600px)` (the only complement spelling accepted), or above 600px
 // only. A width-agnostic block (display-mode, motion) may follow if it styles nothing the phone block styles.

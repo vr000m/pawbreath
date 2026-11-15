@@ -999,7 +999,10 @@ nav button[aria-current=page] svg .knob {
 }
 
 /* The active counter is a modal workspace: the page behind it cannot catch stray taps.
-   Dialog-specific selectors override responsive page rules; active controls never use the idle sticky bar. */
+   Dialog-specific selectors override responsive page rules; active controls never use the idle sticky bar.
+   This block sits above the phone block on purpose: its #counting-dialog selectors win by specificity, not source
+   order, so each phone rule for .counter-card, .breath-circle or .counter-controls that the dialog must not inherit
+   needs its own #counting-dialog override here. The phone-order guard in tests/structure.test.mjs does not check this. */
 #tap-sound-choice { justify-content:center; font-size:13px; }
 #counting-dialog {
   box-sizing:border-box;

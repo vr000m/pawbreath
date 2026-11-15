@@ -35,6 +35,12 @@ const countingDialog = document.querySelector('#counting-dialog');
 const soundOnStatus = 'Tap sound on. Device volume or mute may prevent sound.';
 const soundUnavailableStatus = 'Tap sound is not available on this device.';
 let soundCheck = 0;
+// The only way the app silences tap audio. Suspending makes a pending detect() resolve false, so every stop
+// also invalidates that check: its result would describe this suspend, not whether the device can play sound.
+function stopTapSound() {
+  soundCheck++;
+  tapSound.stop();
+}
 let noticeAnnouncement;
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel('pawbreath-updates') : null;
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -368,7 +374,8 @@ function drawChart() {
   chartPoints = [];
   drawnRing = null;
   const canvas = $('#history-chart');
-  const entries = [...filteredReadings()].reverse();
+  // Redraws (resize) reuse what History rendered; a fresh filter would apply a later Date.now() cutoff.
+  const entries = [...visibleReadings].reverse();
   if (!entries.length || canvas.hidden || page !== 'history') return;
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
@@ -425,7 +432,7 @@ function leaveCountingView() {
   const moved = counterCard.parentElement === countingDialog;
   if (countingDialog.open) countingDialog.close();
   if (moved) counterHome.after(counterCard);
-  tapSound.stop();
+  stopTapSound();
   if (moved) announceUpdateNotice();
   return moved;
 }
@@ -559,17 +566,19 @@ $('#breath-button').onclick = event => {
 // Unavailable audio unticks the box, so the checkbox always matches whether a count will try to sound.
 $('#tap-sound').onchange = async () => {
   const box = $('#tap-sound');
-  const attempt = ++soundCheck;
   const status = $('#counter-status');
   if (!box.checked) {
-    // Unticking is the opt-out: silence and suspend audio started by the tick. The bumped attempt makes a pending
+    // Unticking is the opt-out: silence and suspend audio started by the tick; stopTapSound() also makes a pending
     // detect() ignore its result. Counting never reads audio state, and the box is locked while a count runs.
-    tapSound.stop();
+    stopTapSound();
     if (!session && !pending && [soundOnStatus, soundUnavailableStatus].includes(status.textContent)) {
       status.textContent = dog() ? 'Start the timer, then tap for each breath.' : 'Add your dog to begin.';
     }
     return;
   }
+  // A count ending (or an untick) before detect() settles supersedes this tick: the box stays ticked, so the next
+  // count still attempts sound, and the count's own message stays.
+  const attempt = ++soundCheck;
   const available = await tapSound.detect();
   if (attempt !== soundCheck || !box.checked) return;
   if (!available) { box.checked = false; tapSound.prepare(false); }

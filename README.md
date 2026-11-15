@@ -16,7 +16,7 @@ Enable **Quiet tap sound** before starting for optional feedback. Ticking it che
 
 Readings can be labelled asleep, resting, restless or context not recorded, with an optional uncertainty flag. History applies date/context filters to both chart and list. Saving an entry clears conflicting filters so it stays visible. Profiles are editable; reading deletion asks for confirmation.
 
-For new timed readings, tap a chart point or **Replay taps** to replay that reading. **Replay newest first** plays visible readings one at a time, newest to oldest. The selected point pulses at the recorded tap times, silently at original speed, including gaps at the start and end of each 30/60-second count. A static timeline shows the taps; reduced motion keeps the point still. Stop, filters, navigation, forms and leaving the app stop playback. Old and manual readings show “Tap timing unavailable”.
+For new timed readings, tap a chart point or **Replay taps** to replay that reading. **Replay newest first** plays visible readings one at a time, newest to oldest. The selected point pulses at the recorded tap times, silently at original speed, including gaps at the start and end of each 30/60-second count. A static timeline shows the taps; reduced motion keeps the point still. Stop, filters, navigation, forms and leaving the app stop playback. Old and manual readings show “Tap timing unavailable” and are skipped by **Replay newest first**.
 
 The cached breathing guidance explains measurement context and when to seek veterinary advice. Thresholds start blank: enter the value your vet recommends. The general 30 breaths/min reference never sets that value automatically. The app compares readings against the entered threshold without diagnosing a condition. External source links require connectivity.
 
@@ -26,7 +26,7 @@ Data stays in IndexedDB on this device/browser and hostname. The last-chosen dog
 
 Restore validates the complete backup and adds missing records in one transaction, preserving existing records with matching IDs. A previous backup can recover deleted readings. Export and restore share validation rules and have no fixed aggregate size/count limit; browser resources still limit capacity.
 
-New backups use format 3 and accept versions 1 and 2. New timed readings retain accepted tap offsets in milliseconds, including Undo corrections; old and manual readings have no invented timing. JSON preserves timing; CSV stays a summary. Older apps reject format 3, and exporting through an old app can strip timing. Do not roll back after recording with 1.2.0. Manual records retain their source, context and uncertainty; CSV leaves their count/duration fields blank. Version 1.0 cannot export backups containing 1.1.0 manual records, so before rolling back export a backup from 1.1.0, and do not roll back while manual entries are present.
+New backups use format 3; restore accepts versions 1, 2 and 3. New timed readings retain accepted tap offsets in milliseconds, including Undo corrections; old and manual readings have no invented timing. JSON preserves timing; CSV stays a summary. Older apps reject format 3, and exporting through an old app can strip timing. Do not roll back after recording with 1.2.0. Manual records retain their source, context and uncertainty; CSV leaves their count/duration fields blank. Version 1.0 cannot export backups containing 1.1.0 manual records, so before rolling back export a backup from 1.1.0, and do not roll back while manual entries are present.
 
 ## App updates
 

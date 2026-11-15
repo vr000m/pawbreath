@@ -227,6 +227,70 @@ await check('Unticking tap sound suspends audio in every idle state without affe
     setBox(false); await settle(); // Never ticked, no audio: unticking must not throw.
   } finally { if (session) $('#cancel').click(); Object.assign(tapSound, original); box.checked = false; }
 });
+// Contract: the box is ticked exactly when a count will attempt sound, and a tick's detect() result counts only
+// while that tick is still the latest sound intent. A count ending suspends audio itself, so a detect() still
+// pending then must not read that suspend as "unavailable" and untick the box or overwrite the count's message.
+// State space: {ticked, unticked} x {detect settles idle, during the count, after cancel, after finish, after a
+// zero-tap finish} x {audio available, unavailable}. Every cell also checks taps count exactly once.
+await check('A tap-sound check still pending when a count ends keeps the box and count message consistent', async () => {
+  const original = {...tapSound};
+  const box = $('#tap-sound');
+  const on = 'Tap sound on. Device volume or mute may prevent sound.', off = 'Tap sound is not available on this device.';
+  const cancelled = 'Count cancelled. Start again when your dog is settled.';
+  let context, suspends = 0, tones = 0, available = true;
+  const queued = [];
+  class Audio {
+    constructor() { context = this; this.state = 'suspended'; this.currentTime = 0; }
+    // Deferred like a real resume() awaiting the device. A suspend requested after it wins; unavailable audio rejects.
+    resume() { const at = suspends; return new Promise((resolve, reject) => queued.push(() => {
+      if (!available) { reject(new Error('Audio unavailable')); return; }
+      if (suspends === at) this.state = 'running';
+      resolve();
+    })); }
+    suspend() { suspends++; this.state = 'suspended'; return Promise.resolve(); }
+    createOscillator() { tones++; return {frequency:{},connect(){},disconnect(){},start(){},stop(){}}; }
+    createGain() { return {gain:{setValueAtTime(){},linearRampToValueAtTime(){}},connect(){},disconnect(){}}; }
+  }
+  const settle = async () => { while (queued.length) queued.shift()(); await sleep(0); await sleep(0); };
+  const setBox = checked => { box.checked = checked; box.dispatchEvent(new Event('change')); };
+  const startAndTap = () => { fakeNow = 0; $('#start').click(); $('#breath-button').click();
+    assert(session && session.tapOffsetsMs.length === 1, 'pending sound check changed counting'); };
+  const discard = async () => { const done = $('#discard').onclick(); $('#confirm-yes').click(); await done; };
+  // Each phase arranges a count around a tick whose detect() is still pending, then settles every resume.
+  const phases = {
+    idle: { run: async () => { await settle(); } },
+    'during the count': { run: async () => { startAndTap(); await settle(); $('#cancel').click(); }, status: cancelled, during: true },
+    'after cancel': { run: async () => { startAndTap(); $('#cancel').click(); await settle(); }, status: cancelled, ended: true },
+    'after finish': { run: async () => { startAndTap(); fakeNow = 30000; tick(); await settle();
+      assert(pending && pending.count === 1, 'finish lost the count'); }, status: 'Reading ready to save.', ended: true, saved: true },
+    'after a zero-tap finish': { run: async () => { fakeNow = 0; $('#start').click(); fakeNow = 30000; tick(); await settle(); },
+      status: 'No breaths were counted. Please try again.', ended: true }
+  };
+  try {
+    for (const ticked of [true, false]) for (const [phase, spec] of Object.entries(phases)) for (const audio of [true, false]) {
+      const cell = (ticked ? 'ticked' : 'unticked') + ', ' + phase + ', audio ' + (audio ? 'available' : 'unavailable');
+      context = undefined; queued.length = 0; available = audio; fakeNow = 0;
+      Object.assign(tapSound, createTapSound(Audio));
+      resetCounter();
+      setBox(true);
+      if (!ticked) setBox(false);
+      await spec.run();
+      if (spec.saved) await discard();
+      // Expected box: an untick always wins; a result arriving idle or mid-count reports the device; a count that ended
+      // first leaves the tick standing, so the next count still attempts sound.
+      const expectBox = ticked && (audio || spec.ended === true);
+      const expectStatus = spec.status ?? (ticked ? (audio ? on : off) : 'Start the timer, then tap for each breath.');
+      assert(box.checked === expectBox, cell + ': box ' + box.checked + ', expected ' + expectBox);
+      if (!spec.saved) assert($('#counter-status').textContent === expectStatus, cell + ': status "' + $('#counter-status').textContent + '", expected "' + expectStatus + '"');
+      // The box predicts the next count: ticked attempts sound (and sounds when the device allows), unticked never does.
+      const made = tones;
+      startAndTap(); await settle(); $('#breath-button').click();
+      assert(session.tapOffsetsMs.length === 2, cell + ': next count miscounted');
+      assert((tones > made) === (expectBox && audio), cell + ': next count sounded ' + (tones - made) + ' times with box ' + box.checked);
+      $('#cancel').click(); setBox(false); await settle();
+    }
+  } finally { if (session) $('#cancel').click(); if (pending) await discard(); Object.assign(tapSound, original); box.checked = false; fakeNow = 0; }
+});
 await check('30-second count, undo, deadline, save and persisted result', async () => {
   $('#start').click();
   const expectedOffsets = Array.from({length:12}, (_,i) => 500 + i * 1234);
@@ -595,6 +659,32 @@ await check('History list order equals replay queue order for same-date readings
     assert(listOrder.join() === 'order-B,order-a,order-b,order-old', 'Not newest first by code unit: ' + listOrder.join());
   } finally {
     stopReplay(); snapshot.readings = originalReadings; snapshot.dogs.pop(); selectedId = originalDog; fakeNow = originalNow;
+    renderProfiles(); setRange('all'); setHistoryContext('all'); renderHistory(); showPage('measure');
+  }
+});
+// Contract: the chart draws, and hit-tests, exactly the readings History last rendered. A redraw on resize must not
+// re-filter by the current time, or a reading near the period's edge stays in the list but leaves the chart.
+await check('Chart redraws keep the readings History rendered, even after the period edge passes', async () => {
+  const originalDog = selectedId, originalReadings = snapshot.readings, realNow = Date.now;
+  const driftDog = {id:'drift-dog',name:'Drift check',threshold:null,photo:''};
+  const at = (id, ms) => ({...record,id,dogId:driftDog.id,date:new Date(ms).toISOString(),count:3,rate:6,tapOffsetsMs:[1000,4500,12345],context:'asleep'});
+  const now = realNow.call(Date);
+  const fixtures = [at('drift-edge', now - 7 * 86400000 + 60000), at('drift-new', now - 3600000), at('drift-mid', now - 2 * 86400000)];
+  snapshot.dogs.push(driftDog); snapshot.readings = [...originalReadings, ...fixtures];
+  try {
+    selectedId = driftDog.id; renderProfiles(); setHistoryContext('all'); setRange('7'); showPage('history'); renderHistory();
+    const rendered = [...document.querySelectorAll('.reading-row')].filter(row => row.querySelector('.replay-reading')).map(row => row.dataset.readingId);
+    assert(rendered.join() === 'drift-new,drift-mid,drift-edge', 'Unexpected rendered list ' + rendered.join());
+    Date.now = () => now + 120000; // Two minutes later the edge reading is outside a fresh 7-day filter.
+    window.dispatchEvent(new Event('resize'));
+    const charted = chartPoints.map(point => point.entry.id);
+    assert(charted.join() === [...rendered].reverse().join(), 'Chart shows ' + charted.join() + ' but History lists ' + rendered.join());
+    const point = chartPoints.find(p => p.entry.id === 'drift-edge');
+    const rect = $('#history-chart').getBoundingClientRect();
+    $('#history-chart').dispatchEvent(new MouseEvent('click', {clientX: rect.left + point.x, clientY: rect.top + point.y}));
+    assert(replayState?.entry.id === 'drift-edge', 'Chart point for a listed reading did not replay it');
+  } finally {
+    Date.now = realNow; stopReplay(); snapshot.readings = originalReadings; snapshot.dogs.pop(); selectedId = originalDog;
     renderProfiles(); setRange('all'); setHistoryContext('all'); renderHistory(); showPage('measure');
   }
 });

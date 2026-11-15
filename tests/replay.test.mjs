@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createReplayController, replayableReadings } from '../dist/replay.mjs';
+import { newestFirst } from '../dist/data.mjs';
 
 const entry = (id, date = '2026-11-14T12:00:00.000Z', seconds = 30) => ({ id, dogId: 'milo', date,
   seconds, count: 3, rate: seconds === 30 ? 6 : 3, notes: '', source: 'timed', context: 'asleep', uncertain: false,
@@ -25,6 +26,20 @@ test('eligible queue is newest first with deterministic ties, excluding old/manu
   const before = structuredClone(input);
   assert.deepEqual(replayableReadings(input).map(r => r.id), ['a', 'z', 'old']);
   assert.deepEqual(input, before);
+});
+
+// The replay queue uses the History list's order, data.mjs newestFirst, for every input order.
+test('replayableReadings returns readings in newestFirst order, with equal dates ordered by id', () => {
+  const same = '2026-11-14T12:00:00.000Z';
+  const readings = [entry('b', same), entry('B', same), entry('a', same), entry('old', '2026-11-13T12:00:00.000Z'),
+    entry('new', '2026-11-15T12:00:00.000Z')];
+  const expected = [...readings].sort(newestFirst).map(r => r.id);
+  assert.deepEqual(expected, ['new', 'B', 'a', 'b', 'old']);
+  for (let shift = 0; shift < readings.length; shift++) {
+    const input = [...readings.slice(shift), ...readings.slice(0, shift)];
+    assert.deepEqual(replayableReadings(input).map(r => r.id), expected, `input order ${input.map(r => r.id)}`);
+    assert.deepEqual(replayableReadings([...input].reverse()).map(r => r.id), expected);
+  }
 });
 
 test('irregular taps preserve initial/trailing silence, exact boundaries and full 30/60-second clips', () => {
