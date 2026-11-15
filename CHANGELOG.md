@@ -2,9 +2,15 @@
 
 User-visible changes are recorded here. Release dates record production deployment.
 
+## Unreleased
+
+### Added
+
+- An introduction at `/about` explains breath counting, heart-failure monitoring and vet-directed treatment, with attributed veterinary guidance and a sample journal screenshot. Includes iPhone/Android installation steps, local-storage and backup guidance, and a Settings link that opens in a new tab. The introduction needs an internet connection; the app and its offline guidance stay at the existing address.
+
 ## 1.2.0 — 14 November 2026
 
-Deployed build `aa881e199dc7`.
+Initially deployed build `aa881e199dc7`. Follow-up build `49910c45716f` includes the late-tap guard and sound-status fixes below; verified in production on 15 November 2026.
 
 ### Added
 

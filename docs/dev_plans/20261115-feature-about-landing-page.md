@@ -1,6 +1,6 @@
 # Pawbreath introduction and installation page
 
-**Status:** In Progress
+**Status:** Complete — implementation verified; not deployed; physical acceptance pending
 **Component:** Pawbreath
 **Assignee:** Codex
 **Priority:** Normal
@@ -92,14 +92,14 @@ No origin/manifest/database migration; no new worker executable logic or cached 
 - Journal data, app identity, worker behavior and offline reopening remain intact; automated suite and deploy dry run pass.
 - README/changelog reflect the final implementation and physical-device checks remain explicitly pending.
 
-<!-- reviewed: 2026-11-15 @ 265317f30657fec9da0f4083cbbb0cbb537a70da -->
+<!-- reviewed: 2026-11-15 @ a9bfc5db13849d3905c1d1bfbb61c195a3e76eb1 -->
 
 ## Progress
 
 - [x] Ground the plan in repository facts and source guidance.
 - [x] Review the plan.
-- [ ] Implement the introduction and capture sample screenshot.
-- [ ] Validate and update documentation.
+- [x] Implement the introduction and capture sample screenshot.
+- [x] Validate and update documentation.
 
 ## Findings
 
@@ -107,8 +107,16 @@ Five lens reviews and the contradiction pass completed. Reconciliation: 1 raw fi
 
 ## Issues & Solutions
 
-None yet.
+The 200% text-size browser check found horizontal overflow. Wrapping long text and allowing the header to wrap fixed it. Temporary test-script API/CSP errors were corrected without weakening the site policy.
 
 ## Final Results
 
-Pending implementation. Veterinary sources: [Ceva](https://dogheartdisease.com/monitoring/), [Tufts](https://vet.tufts.edu/foster-hospital-small-animals/specialty-services/cardiology/heartsmart/heart-disease-treatments/treatment-congestive-heart-failure). Installation: [Apple](https://support.apple.com/guide/iphone/iphea86e5236/ios), [Google](https://support.google.com/chrome/answer/9658361?co=GENIE.Platform%3DAndroid&hl=en). Routing: [Cloudflare](https://developers.cloudflare.com/workers/static-assets/routing/advanced/html-handling/). Sources consulted 15 November 2026.
+Implemented `/about` as a script-free document with its own stylesheet, a 29,742-byte screenshot of fictional Milo readings, and a new-tab Settings link. App version remains 1.2.0; branch build `2d1e976e1580` is unreleased. Production still serves `49910c45716f` (verified 15 November).
+
+Verification: 108 Node tests and 32 exact-source browser harness checks pass; Wrangler deployment dry run passes. Local Workers routing sends `/about`, `/about/` and `/about.html` to the same canonical page. Browser checks pass at 320×700, 390×844, 440×956 and 1440×1000, plus 200% text at 390px. Screenshots were visually inspected. Content/links work with JavaScript disabled; keyboard skip/focus works; same-origin assets load under the existing CSP with zero page runtime errors. A synthetic journal survives About navigation and offline root reload exactly; an unsaved form stays in the original app tab. The 12 precached shell paths are unchanged and exclude About assets.
+
+Evidence: `/private/tmp/pawbreath-about-report.json`, `/private/tmp/pawbreath-about-browser.log`, `/private/tmp/pawbreath-about-harness.log`, `/private/tmp/pawbreath-about-deploy-check.log`. Screenshots: `/private/tmp/pawbreath-about-desktop.png` and `pawbreath-about-iphone12.png` / `pawbreath-about-iphone17promax.png` in that directory. Temporary browser verification scripts use isolated synthetic data, not an existing user profile.
+
+Physical Safari/home-screen installation and VoiceOver remain pending on iPhone 12 and iPhone 17 Pro Max. Chromium size profiles do not verify those interactions. No merge or deployment was performed. Sibling plans were inspected for shared markup/worker references; no historical architecture or data decision was superseded.
+
+Veterinary sources: [Ceva](https://dogheartdisease.com/monitoring/), [Tufts](https://vet.tufts.edu/foster-hospital-small-animals/specialty-services/cardiology/heartsmart/heart-disease-treatments/treatment-congestive-heart-failure). Installation: [Apple](https://support.apple.com/guide/iphone/iphea86e5236/ios), [Google](https://support.google.com/chrome/answer/9658361?co=GENIE.Platform%3DAndroid&hl=en). Routing: [Cloudflare](https://developers.cloudflare.com/workers/static-assets/routing/advanced/html-handling/). Sources consulted 15 November 2026.
