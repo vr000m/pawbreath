@@ -1,6 +1,6 @@
 # README and documentation guides
 
-**Status:** In progress — guides verified; screenshot replacement follows
+**Status:** Complete — local changes verified
 **Component:** Documentation
 **Branch:** docs/readme-and-guides
 **Created:** 2026-11-15
@@ -14,7 +14,7 @@ Preserve the existing operational guidance. Remove dated production status from 
 ## Scope and verification
 
 - [x] Shorten `README.md` and create the three linked guides with return links.
-- [ ] Capture and visually inspect both mobile screenshots, including their README presentation.
+- [x] Capture and visually inspect both mobile screenshots, including their README presentation.
 - [x] Check sibling plans for materially stale references; append a documentation-location correction only where needed.
 - [x] Verify local links, retained guidance, documentation-only diff and `npm test`.
 
@@ -22,4 +22,8 @@ This is a documentation reorganisation using the existing application; no runtim
 
 ## Outcome
 
-README shortened, detailed guidance moved into three guides, and the baseline documentation pointer corrected. All 22 original instruction/code blocks are preserved. The existing preview remains in this commit; the mobile About screenshots follow separately. The full suite passes 108 tests, and application source is unchanged.
+README shortened and three guides added. All 22 original instruction/code blocks are preserved across the guides; 32 local links across all 10 Markdown documents resolve. Captures use `just dev 8772` at `/about` with a fresh browser context and the existing fictional sample image. Both 780×1688 PNGs were visually inspected, including a local preview at the README display width of 300px: side by side at 800px, stacked without overflow at 390px. The old README screenshot was removed.
+
+`npm test` passes all 108 tests plus release-metadata and syntax checks; `git diff --check` passes. App source, generated metadata, dependencies, tests and scripts are unchanged. The documentation audit found no further updates needed: the baseline plan has the dated location correction, other plans retain their historical evidence, and this documentation-only change needs no application changelog entry. README quick start uses `just install` and `just dev`; the development guide retains the optional basic Python preview.
+
+Evidence: `/private/tmp/pawbreath-docs-tests.log` and `/private/tmp/pawbreath-readme-image-preview.png`. The work is split into a guide reorganisation commit and a screenshot replacement commit. No PR or deployment was performed.

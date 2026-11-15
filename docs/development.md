@@ -37,3 +37,7 @@ Open the browser harness's printed file to run its checks. It uses an isolated d
 The browser harness checks application behaviour in isolation. Physical Safari, installed-app lifecycle and VoiceOver checks on iPhone 12 and iPhone 17 Pro Max remain pending in the [About page verification record](dev_plans/20261115-feature-about-landing-page.md). Chromium phone-size emulation does not establish those results.
 
 See the [development plans](dev_plans/) for decisions and verification records, and the [changelog](../CHANGELOG.md) for user-visible changes.
+
+## README screenshots
+
+The README uses two 390×844 mobile viewport captures of `/about`, served by `just dev`, at 2× pixel density: `images/about-mobile-intro.png` at the top and `images/about-mobile-journal.png` scrolled to the journal preview. The journal image embedded in About contains fictional Milo readings. Capture in a fresh browser context; no personal journal is needed. Keep the sticky header, preview and example caption visible in the second capture, and inspect both images at their README display width of 300px. Store documentation screenshots in `docs/images/`, outside the deployed `dist/` directory.

@@ -4,9 +4,12 @@ A mobile-first breathing journal for dogs. Count their resting breaths, keep a h
 
 [Open Pawbreath](https://pawbreath.com/) · [About and phone installation](https://pawbreath.com/about)
 
-![Pawbreath measurement screen with a sample Milo profile and latest reading](docs/images/pawbreath-preview.png)
+<p>
+  <img src="docs/images/about-mobile-intro.png" width="300" alt="Mobile About page introducing Pawbreath, with links to start a journal and add it to your phone.">
+  <img src="docs/images/about-mobile-journal.png" width="300" alt="Mobile About page showing the History preview with fictional Milo readings and a sample-data caption.">
+</p>
 
-Local preview with fictional sample data.
+Two views of the About page on a mobile viewport. The journal preview contains fictional sample readings, not a target for your dog.
 
 ## What you can do
 
