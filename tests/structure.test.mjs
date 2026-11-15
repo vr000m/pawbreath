@@ -329,4 +329,8 @@ test('the active counter is styled from #counting-dialog, never from a page ance
   assert.ok(!/:has\(\s*\.breath-circle\.active\s*\)/.test(stripComments(css)), 'no rule may depend on .breath-circle.active being inside a page ancestor');
   const dialog = rules(css).find(({ selectors }) => selectors.includes('#counting-dialog .counter-controls'));
   assert.ok(dialog && /position:\s*static/.test(dialog.body), 'active Undo/Cancel stay in normal flow below the target, never sticky');
+  const card = rules(css).find(({ selectors }) => selectors.includes('#counting-dialog .counter-card'));
+  // A fixed height would let overflowing content spill past the card and drop its safe-area bottom padding.
+  assert.ok(card && /min-height:\s*100%/.test(card.body) && !/(?:^|[;\s])height:\s*100%/.test(card.body), 'the dialog card grows with its content (min-height only)');
+  assert.ok(/\.update-notice:empty\s*\{[^}]*opacity:\s*0/.test(stripComments(css)), 'an emptied update notice stays invisible while it is re-announced');
 });
