@@ -120,3 +120,11 @@ Evidence: `/private/tmp/pawbreath-about-report.json`, `/private/tmp/pawbreath-ab
 Physical Safari/home-screen installation and VoiceOver remain pending on iPhone 12 and iPhone 17 Pro Max. Chromium size profiles do not verify those interactions. No merge or deployment was performed. Sibling plans were inspected for shared markup/worker references; no historical architecture or data decision was superseded.
 
 Veterinary sources: [Ceva](https://dogheartdisease.com/monitoring/), [Tufts](https://vet.tufts.edu/foster-hospital-small-animals/specialty-services/cardiology/heartsmart/heart-disease-treatments/treatment-congestive-heart-failure). Installation: [Apple](https://support.apple.com/guide/iphone/iphea86e5236/ios), [Google](https://support.google.com/chrome/answer/9658361?co=GENIE.Platform%3DAndroid&hl=en). Routing: [Cloudflare](https://developers.cloudflare.com/workers/static-assets/routing/advanced/html-handling/). Sources consulted 15 November 2026.
+
+## 15 November 2026 — consistent footer amendment
+
+After the gauntlet approved `3aed7d1` with no findings, the owner requested a consistent footer across About and every journal page. This supersedes the Settings-only integration seam and the original exclusion of app CSS changes. The reviewed contract above remains the historical record; its marker and the completed gauntlet do not cover this amendment.
+
+The existing shared journal footer now links to About in a separate tab, with visible new-tab/connection guidance; About retains its return link. Both standalone stylesheets carry matching footer rules, avoiding another mandatory offline asset. Tagline, typography, spacing, focus treatment and responsive layout match; storage, runtime logic and the 12 precached paths are unchanged. Branch build is now `dacdc34b62ec`, unreleased.
+
+Validation: 108 tests, 32 browser-harness checks and deployment dry run pass. Local browser checks compare computed footer styles on all three journal pages against About at 320/390/440/1440px, verify 44px links clear the mobile tab bar, and exercise both destinations with no opener. Existing About navigation, offline journal and unsaved-form checks also pass. Physical iPhone Safari/installed-app and VoiceOver checks remain pending. No deployment.

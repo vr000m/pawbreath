@@ -765,14 +765,14 @@ h1 {
   margin-bottom:18px;
 }
 
-footer {
-  font-family:Georgia,serif;
-  color:var(--muted);
-  font-style:italic;
-  font-size:13px;
-  text-align:center;
-  margin-top:42px;
-  padding:12px;
+/* Keep footer styles aligned with about.css. */
+.site-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-block: 2rem; font-size: .8rem; line-height: 1.7; color: #56695f; overflow-wrap: anywhere; }
+.site-footer p { margin: 0; line-height: inherit; }
+.site-footer a { display: inline-flex; align-items: center; min-height: 44px; color: inherit; text-underline-offset: .2em; }
+.site-footer a:focus-visible { outline: 3px solid #a26e29; outline-offset: 5px; }
+.site-footer .footer-note { font-size: .75rem; }
+@media (max-width: 760px) {
+  .site-footer { flex-direction: column; align-items: flex-start; gap: .25rem; }
 }
 
 dialog {
@@ -1253,10 +1253,6 @@ nav button[aria-current=page] svg .knob {
   }
   .toast {
     bottom:calc(85px + env(safe-area-inset-bottom));
-  }
-  footer {
-    margin-top:30px;
-    font-size:12px;
   }
   .reading-row {
     gap:8px;

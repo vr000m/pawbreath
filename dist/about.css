@@ -73,8 +73,12 @@ figcaption { margin-top: 1.8rem; text-align: center; line-height: 1.6; }
 .data-copy h3 + p { margin-top: .5rem; }
 .closing { padding: 64px 24px; text-align: center; background: #e7eedf; border-radius: 24px; }
 .closing h2 { margin-bottom: 1.75rem; }
-.site-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-block: 2rem; font-size: .8rem; color: var(--muted); }
-.site-footer a { display: inline-flex; align-items: center; min-height: 44px; }
+/* Keep footer styles aligned with app.css. */
+.site-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-block: 2rem; font-size: .8rem; line-height: 1.7; color: #56695f; overflow-wrap: anywhere; }
+.site-footer p { margin: 0; line-height: inherit; }
+.site-footer a { display: inline-flex; align-items: center; min-height: 44px; color: inherit; text-underline-offset: .2em; }
+.site-footer a:focus-visible { outline: 3px solid #a26e29; outline-offset: 5px; }
+.site-footer .footer-note { font-size: .75rem; }
 section[id] { scroll-margin-top: 24px; }
 @media (max-width: 760px) {
   .wrap { width: calc(100% - 40px); }
